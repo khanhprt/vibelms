@@ -1,0 +1,32 @@
+{
+  "name": "coursepilot-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "prepare": "wxt prepare",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@eslint/js": "^9.0.0",
+    "@wxt-dev/module-react": "^1.2.2",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "prettier": "^3.0.0",
+    "tailwindcss": "^4.0.0",
+    "wxt": "^0.21.4"
+  },
+  "dependencies": {
+    "@chakra-ui/react": "^3.0.0",
+    "@emotion/react": "^11.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
+
