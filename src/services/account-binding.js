@@ -13,7 +13,9 @@ export async function bindLmsAccount(account) {
     (settings.boundAccount.accountId !== payload.accountId ||
       settings.boundAccount.hostname !== payload.hostname)
   ) {
-    throw new Error('Extension này đã liên kết với một tài khoản khác. Xóa liên kết trong Cài đặt trước.');
+    throw new Error(
+      'Extension này đã liên kết với một tài khoản khác. Xóa liên kết trong Cài đặt trước.',
+    );
   }
 
   if (settings.accountVerifyEndpoint) {
@@ -32,4 +34,20 @@ export async function bindLmsAccount(account) {
 
   await settingsStore.patch({ boundAccount: payload });
   return { ok: true, boundAccount: payload };
+}
+
+/**
+ * Tự gắn cờ liên kết khi ở chế độ cục bộ. Nếu accountVerifyEndpoint rỗng thì không có
+ * API nào để xác thực, nên đăng nhập LMS thành công đã là đủ; cần chờ đây là hành
+ * động tốn nhiều thao tác mà không thêm tính bảo mật nào. Khi đã cấu hình endpoint
+ * thật thì vẫn phải liên kết tường minh để API chấp thuận tài khoản.
+ */
+export async function autoBindLocalAccount(account) {
+  const settings = await settingsStore.get();
+  if (settings.boundAccount) return settings.boundAccount;
+  if (settings.accountVerifyEndpoint) return null;
+  if (!account?.authenticated || !account.accountId || !account.hostname) return null;
+  const boundAccount = { accountId: account.accountId, hostname: account.hostname };
+  await settingsStore.patch({ boundAccount });
+  return boundAccount;
 }

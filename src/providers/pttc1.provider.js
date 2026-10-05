@@ -22,6 +22,31 @@ function frameVideoIn(frame) {
   }
 }
 
+// Moodle dựng nút bắt đầu bài trong .single_button. Nhãn đổi theo tình huống:
+// "Attempt quiz" khi mới, "Continue your attempt" / "Tiếp tục làm bài" khi đang làm dở.
+// Nút thật của PTTC1 là <button type="submit" id="single_button<hash>"> — không có
+// thuộc tính name, nên cần bắt theo id để không phụ thuộc nhãn.
+const QUIZ_START_SELECTORS = [
+  'a[href*="/mod/quiz/attempt.php"]',
+  'button[id^="single_button"]',
+  'input[id^="single_button"]',
+  '#startquizbutton',
+  'button[name="startattempt"]',
+  'input[name="startattempt"]',
+  '.single_button button',
+  '.single_button a[href]',
+  '.single_button input[type="submit"]',
+].join(', ');
+// Nhãn tiếng Việt có thể đến dạng NFD (dấu tách rời) trong khi regex viết dạng NFC, nên
+// phải chuẩn hóa chuỗi cần tìm trước khi so — nếu không sẽ khớp một cách âm thầm sai.
+const QUIZ_START_TEXT = /attempt|continue|bắt đầu|làm bài|bài làm|tiếp tục|tiếp/i;
+const matchesStartText = (value) =>
+  QUIZ_START_TEXT.test(String(value || '').normalize('NFC'));
+
+// Moodle có preview.php — xem thử không tính điểm nhưng giáo viên vẫn thấy trong danh
+// sách lượt, nên tuyệt đối không được bấm nhầm vào nó.
+const isPreviewLink = (element) => /\/mod\/quiz\/preview\.php/.test(element?.href || '');
+
 export const pttc1Provider = {
   id: 'pttc1-moodle',
   matches(location) {
@@ -93,5 +118,31 @@ export const pttc1Provider = {
     return document.querySelector(
       'textarea[name*="message" i], textarea[name*="comment" i]',
     );
+  },
+  isQuizPage(location) {
+    return location.pathname.startsWith('/mod/quiz/');
+  },
+  isQuizStartPage(location) {
+    return location.pathname.startsWith('/mod/quiz/view.php');
+  },
+  isQuizAttemptPage(location) {
+    return location.pathname.startsWith('/mod/quiz/attempt.php');
+  },
+  findQuizStartButton(doc) {
+    const direct = [...doc.querySelectorAll(QUIZ_START_SELECTORS)].find(
+      (element) => !isPreviewLink(element),
+    );
+    if (direct) return direct;
+    return (
+      [...doc.querySelectorAll('button, input[type="submit"], a')].find(
+        (element) =>
+          !isPreviewLink(element) &&
+          matchesStartText(element.textContent || element.value),
+      ) || null
+    );
+  },
+  // Moodle bọc mỗi câu hỏi trong .que; .qtype là class định danh loại câu hỏi.
+  findQuizQuestionNodes(doc) {
+    return [...doc.querySelectorAll('.que, .question')];
   },
 };

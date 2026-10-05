@@ -12,8 +12,10 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener((message) => controller.handleMessage(message));
     // Công tắc nguồn ở popup bật/tắt: nội dung script phải phản ứng ngay, không cần reload trang.
     browser.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !('extensionEnabled' in changes)) return;
-      controller.setEnabled(changes.extensionEnabled.newValue !== false);
+      if (area !== 'local') return;
+      if ('extensionEnabled' in changes)
+        controller.setEnabled(changes.extensionEnabled.newValue !== false);
+      if ('forumHelperEnabled' in changes) controller.refreshForumHelper();
     });
   },
 });

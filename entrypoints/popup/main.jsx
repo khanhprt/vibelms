@@ -1,9 +1,10 @@
 import { Button, ChakraProvider, defaultSystem } from '@chakra-ui/react';
 import { createRoot } from 'react-dom/client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import '../../src/ui/globals.css';
 import { getActiveTab, sendToActiveTab } from '../../src/shared/browser.js';
 import { settingsStore } from '../../src/shared/settings-store.js';
+import { exportSettingsFile, readSettingsFile } from '../../src/shared/settings-file.js';
 
 function Popup() {
   const [status, setStatus] = useState('Đang kiểm tra trang học...');
@@ -11,8 +12,13 @@ function Popup() {
   const [autoPlayVideo, setAutoPlayVideo] = useState(false);
   const [showCourseStatus, setShowCourseStatus] = useState(false);
   const [autoNextLesson, setAutoNextLesson] = useState(true);
+  const [nextLessonDelaySeconds, setNextLessonDelaySeconds] = useState(5);
+  const [forumHelperEnabled, setForumHelperEnabled] = useState(true);
   const [autoLogin, setAutoLogin] = useState(false);
-  const [screen, setScreen] = useState('home');
+  const [quizExport, setQuizExport] = useState(false);
+  const [screen] = useState(() =>
+    new URLSearchParams(window.location.search).get('screen') === 'settings' ? 'settings' : 'home',
+  );
   useEffect(() => {
     refresh();
   }, []);
@@ -32,7 +38,10 @@ function Popup() {
     setAutoPlayVideo(settings.autoPlayVideo);
     setShowCourseStatus(settings.showCourseStatus);
     setAutoNextLesson(settings.autoNextLesson);
+    setNextLessonDelaySeconds(settings.nextLessonDelaySeconds);
+    setForumHelperEnabled(settings.forumHelperEnabled !== false);
     setAutoLogin(settings.pttc1AutoLogin);
+    setQuizExport(Boolean(settings.quizExportEnabled));
     const tab = await getActiveTab();
     const course = await sendToActiveTab(tab.id, { type: 'COURSE_STATUS' });
     if (!course?.supported) return setStatus('Mở trang LMS PTTC1 để bắt đầu.');
@@ -97,10 +106,30 @@ function Popup() {
     await settingsStore.patch({ pttc1AutoLogin: value });
     setAutoLogin(value);
   }
-  if (screen === 'settings') return <InlineSettings onBack={() => setScreen('home')} />;
+  async function toggleForumHelper() {
+    const value = !forumHelperEnabled;
+    await settingsStore.patch({ forumHelperEnabled: value });
+    setForumHelperEnabled(value);
+    setStatus(value ? 'Đã bật hỗ trợ Forum.' : 'Đã tắt hỗ trợ Forum.');
+  }
+  // Đọc câu hỏi diễn ra trong content script, nên bật công tắc rồi tải lại trang quiz.
+  async function toggleQuizExport() {
+    const value = !quizExport;
+    await settingsStore.patch({ quizExportEnabled: value });
+    setQuizExport(value);
+    setStatus(
+      value
+        ? 'Đã bật trích xuất câu hỏi. Tải lại trang quiz để áp dụng.'
+        : 'Đã tắt trích xuất câu hỏi.',
+    );
+  }
+  // Reloading the popup document lets the browser measure the shorter settings screen,
+  // rather than retain the height required by the home screen.
+  if (screen === 'settings')
+    return <InlineSettings onBack={() => window.location.assign(window.location.pathname)} />;
   return (
     <main className="reference-popup w-90">
-      <div className="reference-panel">
+      <div className="reference-panel home-panel">
         <header className="flex items-center justify-between">
           <div className="reference-logo">
             <span className="reference-mark" />
@@ -116,7 +145,7 @@ function Popup() {
             ⏻
           </button>
         </header>
-        <section className="mt-5">
+        <section className="home-summary mt-5">
           <div className="reference-stat">
             <span>Trạng thái</span>
             <span className={`reference-value ${powerOn ? '' : 'is-off'}`}>
@@ -135,7 +164,7 @@ function Popup() {
           </div>
         </section>
         <div className="reference-rule" />
-        <section className="status-panel rounded-xl p-3">
+        <section className="home-account status-panel rounded-xl p-3">
           <p className="eyebrow">Trạng thái tài khoản</p>
           <p className="mt-1 text-xs text-slate-200">{status}</p>
         </section>
@@ -167,7 +196,7 @@ function Popup() {
         </div>
         <div className="reference-row">
           <span className="reference-icon">→</span>
-          <span className="reference-title">Chuyển bài sau 2s</span>
+          <span className="reference-title">Chuyển bài sau {nextLessonDelaySeconds}s</span>
           <input
             className="reference-switch"
             type="checkbox"
@@ -187,7 +216,29 @@ function Popup() {
           />
           <span className="reference-chevron">›</span>
         </div>
-        <div className="mt-5 grid gap-3">
+        <div className="reference-row">
+          <span className="reference-icon">?</span>
+          <span className="reference-title">Trích xuất câu hỏi quiz</span>
+          <input
+            className="reference-switch"
+            type="checkbox"
+            checked={quizExport}
+            onChange={toggleQuizExport}
+          />
+          <span className="reference-chevron">›</span>
+        </div>
+        <div className="reference-row">
+          <span className="reference-icon">F</span>
+          <span className="reference-title">Hỗ trợ Forum</span>
+          <input
+            className="reference-switch"
+            type="checkbox"
+            checked={forumHelperEnabled}
+            onChange={toggleForumHelper}
+          />
+          <span className="reference-chevron">›</span>
+        </div>
+        <div className="home-actions mt-5 grid gap-3">
           <Button
             className="ai-button w-full"
             onClick={login}
@@ -198,7 +249,7 @@ function Popup() {
           </Button>
           <Button
             className="ai-button w-full"
-            onClick={() => setScreen('settings')}
+            onClick={() => window.location.assign(`${window.location.pathname}?screen=settings`)}
             variant="outline"
             colorPalette="green"
           >
@@ -215,10 +266,14 @@ function InlineSettings({ onBack }) {
     pttc1Username: '',
     pttc1Password: '',
     pttc1AutoLogin: false,
+    nextLessonDelaySeconds: 5,
+    clickDelaySeconds: 1,
     llmModel: 'gpt-4o',
     llmApiKey: '',
   });
   const [saved, setSaved] = useState(false);
+  const [backup, setBackup] = useState('');
+  const fileInput = useRef(null);
   useEffect(() => {
     settingsStore.get().then((value) =>
       setSettings((current) => ({
@@ -240,6 +295,33 @@ function InlineSettings({ onBack }) {
     });
     setSettings((current) => ({ ...current, pttc1Password: '', llmApiKey: '' }));
     setSaved(true);
+  }
+  // Nạp cấu hình từ file: giữ nguyên mật khẩu/API key đang lưu nếu file không có.
+  async function importSettings(file) {
+    try {
+      const incoming = await readSettingsFile(file);
+      const current = await settingsStore.get();
+      await settingsStore.patch({
+        ...incoming,
+        pttc1Password: incoming.pttc1Password || current.pttc1Password,
+        llmApiKey: incoming.llmApiKey || current.llmApiKey,
+      });
+      const merged = await settingsStore.get();
+      setSettings((current) => ({
+        ...current,
+        ...merged,
+        pttc1Password: '',
+        llmApiKey: '',
+      }));
+      setSaved(false);
+      setBackup(`Đã nạp ${Object.keys(incoming).length} trường từ ${file.name}.`);
+    } catch (error) {
+      setBackup(error.message || 'Không nạp được file cấu hình.');
+    }
+  }
+  async function exportSettings() {
+    exportSettingsFile(await settingsStore.get());
+    setBackup('Đã tải cấu hình. File chứa mật khẩu và API key dạng chữ thường.');
   }
   return (
     <main className="reference-popup w-90">
@@ -278,8 +360,47 @@ function InlineSettings({ onBack }) {
               onChange={(e) => update('pttc1AutoLogin', e.target.checked)}
             />
           </label>
+          <label className="reference-row">
+            <span className="reference-title">Chờ trước khi chuyển bài (giây)</span>
+            <input
+              className="reference-key py-2 text-center"
+              style={{ width: '5rem' }}
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              value={settings.nextLessonDelaySeconds}
+              onChange={(e) =>
+                update(
+                  'nextLessonDelaySeconds',
+                  Math.min(60, Math.max(1, Number(e.target.value) || 1)),
+                )
+              }
+              aria-label="Số giây chờ trước khi chuyển bài"
+            />
+          </label>
+          <label className="reference-row">
+            <span className="reference-title">Nghỉ trước mỗi lần bấm (giây)</span>
+            <input
+              className="reference-key py-2 text-center"
+              style={{ width: '5rem' }}
+              type="number"
+              min="0"
+              max="10"
+              step="0.5"
+              value={settings.clickDelaySeconds}
+              onChange={(e) =>
+                update('clickDelaySeconds', Math.min(10, Math.max(0, Number(e.target.value) || 0)))
+              }
+              aria-label="Số giây nghỉ trước mỗi lần bấm tự động"
+            />
+          </label>
+          <p className="mt-1 text-[11px] leading-5 text-slate-300/80">
+            Khoảng nghỉ chung trước mọi cú bấm tự động (chuyển bài, trả lời quiz, nộp bài).
+            Tăng lên nếu thấy LMS bỏ sót thao tác. Đặt 0 để bấm ngay.
+          </p>
           <div className="reference-rule" />
-          <p className="eyebrow">Vilao AI</p>
+          <p className="eyebrow">AI Config</p>
           <input
             className="reference-key mt-2"
             placeholder="Model"
@@ -298,6 +419,47 @@ function InlineSettings({ onBack }) {
           </Button>
           {saved && (
             <p className="mt-2 text-center text-xs text-emerald-200">Đã lưu cấu hình.</p>
+          )}
+          <div className="reference-rule" />
+          <p className="eyebrow">Sao lưu cấu hình</p>
+          <p className="mt-2 text-[11px] leading-5 text-amber-200/70">
+            File cấu hình chứa mật khẩu LMS và API key ở dạng chữ thường. Chỉ nạp từ file
+            do chính bạn xuất ra.
+          </p>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => {
+              const [file] = event.target.files || [];
+              // reset value để chọn lại cùng một file vẫn kích hoạt onChange
+              event.target.value = '';
+              if (file) importSettings(file);
+            }}
+          />
+          <div className="mt-2 grid gap-2">
+            <Button
+              className="ai-button w-full"
+              variant="outline"
+              colorPalette="green"
+              onClick={() => fileInput.current?.click()}
+            >
+              Nạp từ file .json
+            </Button>
+            <Button
+              className="ai-button w-full"
+              variant="outline"
+              colorPalette="green"
+              onClick={exportSettings}
+            >
+              Xuất cấu hình
+            </Button>
+          </div>
+          {backup && (
+            <p className="mt-2 text-center text-[11px] leading-5 text-emerald-200">
+              {backup}
+            </p>
           )}
         </form>
       </div>

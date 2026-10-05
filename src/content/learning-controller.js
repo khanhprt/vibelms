@@ -1,17 +1,24 @@
 import { MESSAGE } from '../shared/constants.js';
 import { settingsStore } from '../shared/settings-store.js';
+import { clickWithDelay, nextLessonDelayMs, waitClickDelay } from '../shared/delays.js';
 import { syncCourseStatusPanel } from './course-status-panel.js';
 import { markAutoResumeAfterLogin, resumeLowestProgressCourse } from './auto-resume.js';
 import { mountForumHelper } from './forum-helper.js';
-
-const ACTION_DELAY_MS = 500;
-const NEXT_LESSON_DELAY_MS = 2000;
-const delay = () => new Promise((resolve) => setTimeout(resolve, ACTION_DELAY_MS));
+import { mountQuizExtractor } from './quiz-extractor.js';
+import { autoBindLocalAccount } from '../services/account-binding.js';
 
 // Activity phải có người dùng trực tiếp làm: không tự phát, không tự chuyển.
 const MANUAL_PATHS = ['/mod/forum/', '/mod/quiz/'];
 const needsManualAction = () =>
   MANUAL_PATHS.some((path) => location.pathname.startsWith(path));
+const FORUM_AUTO_CREATE_PREFIX = 'coursepilot_forum_auto_create_';
+
+function completedForumMarkers() {
+  return Object.keys(sessionStorage).filter(
+    (key) =>
+      key.startsWith(FORUM_AUTO_CREATE_PREFIX) && sessionStorage.getItem(key) === 'done',
+  );
+}
 
 export function createLearningController(provider) {
   let observer;
@@ -19,6 +26,8 @@ export function createLearningController(provider) {
   let coursePanelSynced = false;
   let nextLessonTimer;
   let nextLessonSource;
+  let forumAdvanceTimer;
+  let quizCleanup;
   let enabled = true;
 
   async function allowedHere() {
@@ -35,24 +44,44 @@ export function createLearningController(provider) {
     // Bỏ lượt làm bài dở có thể bị Moodle tính là nộp hoặc chờ hết giờ.
     if (needsManualAction()) return { ok: false, reason: 'requires-user' };
     if (!(await allowedHere())) return { ok: false, reason: 'domain-not-allowed' };
-    await delay();
     const button = provider.findNextButton(document);
     if (!button || button.disabled) return { ok: false };
-    button.click();
-    return { ok: true };
+    return { ok: await clickWithDelay(button) };
   }
 
-  // Không đợi video kết thúc: cứ phát (nếu có), đợi NEXT_LESSON_DELAY_MS rồi bấm "Hoạt động Tiếp theo".
+  function advanceAfterCompletedForum() {
+    if (!location.pathname.startsWith('/mod/forum/') || forumAdvanceTimer) return;
+    const markers = completedForumMarkers();
+    if (!markers.length) return;
+
+    // The marker is written just before Moodle submits/navigates. Give that
+    // interaction time to settle, then advance only if this forum document is
+    // still active and the marker remains present.
+    forumAdvanceTimer = setTimeout(async () => {
+      forumAdvanceTimer = undefined;
+      const activeMarkers = completedForumMarkers();
+      if (!activeMarkers.length || !(await allowedHere())) return;
+      const button = provider.findNextButton(document);
+      if (!button || button.disabled) return;
+      if (await clickWithDelay(button)) {
+        activeMarkers.forEach((key) => sessionStorage.removeItem(key));
+      }
+    }, 1_000);
+  }
+
+  // Không đợi video kết thúc: cứ phát (nếu có), đợi theo cài đặt rồi bấm "Hoạt động Tiếp theo".
   // Moodle có thể thay thế <video> khi chuyển activity nên huỷ lịch cũ trước khi hẹn lại.
-  function scheduleNextLesson(source) {
+  async function scheduleNextLesson(source) {
     if (nextLessonSource === source) return;
     clearTimeout(nextLessonTimer);
     nextLessonSource = source;
+    const settings = await settingsStore.get();
+    if (nextLessonSource !== source) return;
     nextLessonTimer = setTimeout(() => {
       nextLessonTimer = undefined;
       nextLessonSource = undefined;
       nextLesson();
-    }, NEXT_LESSON_DELAY_MS);
+    }, nextLessonDelayMs(settings.nextLessonDelaySeconds));
   }
 
   function startAutoResume() {
@@ -83,7 +112,7 @@ export function createLearningController(provider) {
       if (frame) watchFrameLoad(frame);
     }
 
-    // Đếm 2s ở MỌI trang activity, kể cả trang tài liệu — #next-activity-link luôn có ở đó.
+    // Đếm theo cài đặt ở MỌI trang activity, kể cả trang tài liệu — #next-activity-link luôn có ở đó.
     if (autoNextLesson && provider.findNextButton(document))
       scheduleNextLesson(document.body);
   }
@@ -97,7 +126,7 @@ export function createLearningController(provider) {
     ) {
       return { ok: false, reason: 'credentials-or-login-page-missing' };
     }
-    await delay();
+    await waitClickDelay();
     const result = provider.login({
       username: settings.pttc1Username,
       password: settings.pttc1Password,
@@ -117,6 +146,7 @@ export function createLearningController(provider) {
     observer = new MutationObserver(() => {
       if (!enabled) return;
       watchCurrentVideo();
+      advanceAfterCompletedForum();
       tryResumeCourse();
       if (
         location.pathname.startsWith('/my/') &&
@@ -135,6 +165,7 @@ export function createLearningController(provider) {
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
     watchCurrentVideo();
+    advanceAfterCompletedForum();
   }
 
   // Công tắc dừng chung: tắt là huỷ mọi lịch, ngắt observer và ẩn panel.
@@ -142,6 +173,7 @@ export function createLearningController(provider) {
     if (value === enabled) return;
     enabled = value;
     clearTimeout(nextLessonTimer);
+    clearTimeout(forumAdvanceTimer);
     clearTimeout(coursePanelTimer);
     nextLessonTimer = undefined;
     nextLessonSource = undefined;
@@ -149,11 +181,14 @@ export function createLearningController(provider) {
 
     if (!enabled) {
       observer?.disconnect();
+      quizCleanup?.();
+      quizCleanup = undefined;
       syncCourseStatusPanel(false);
       return;
     }
     observePage();
     mountForumHelper();
+    quizCleanup = mountQuizExtractor(provider);
     tryResumeCourse();
     settingsStore
       .get()
@@ -161,7 +196,7 @@ export function createLearningController(provider) {
   }
 
   // Chưa chạy gì cho tới khi biết công tắc đang bật hay tắt.
-  settingsStore.get().then((settings) => {
+  settingsStore.get().then(async (settings) => {
     enabled = settings.extensionEnabled !== false;
     if (!enabled) {
       syncCourseStatusPanel(false);
@@ -169,6 +204,9 @@ export function createLearningController(provider) {
     }
     observePage();
     mountForumHelper();
+    // Gắn cờ liên kết trước, để các nút gợi ý LLM dùng được ngay khi bấm.
+    await autoBindLocalAccount(provider.getAccount?.());
+    quizCleanup = mountQuizExtractor(provider);
     tryResumeCourse();
     syncCourseStatusPanel(settings.showCourseStatus);
     if (settings.pttc1AutoLogin && !provider.getAccount?.().authenticated) {
@@ -201,10 +239,15 @@ export function createLearningController(provider) {
       return undefined;
     },
     setEnabled,
+    async refreshForumHelper() {
+      if (enabled) await mountForumHelper();
+    },
     destroy() {
       observer?.disconnect();
+      quizCleanup?.();
       clearTimeout(coursePanelTimer);
       clearTimeout(nextLessonTimer);
+      clearTimeout(forumAdvanceTimer);
     },
   };
 }

@@ -52,4 +52,20 @@ export const genericLmsProvider = {
   findDiscussionInput(document) {
     return document.querySelector(SELECTORS.discussionInput);
   },
+  isQuizPage(location) {
+    return location.pathname.startsWith('/mod/quiz/');
+  },
+  isQuizStartPage() {
+    return false;
+  },
+  isQuizAttemptPage() {
+    return false;
+  },
+  // LMS chung không có quy ước DOM của Moodle: để trống, trình trích xuất sẽ báo "không hỗ trợ".
+  findQuizStartButton() {
+    return null;
+  },
+  findQuizQuestionNodes() {
+    return [];
+  },
 };
