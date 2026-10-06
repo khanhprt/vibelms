@@ -73,7 +73,7 @@ export function exportSettingsFile(settings) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `coursepilot-settings-${Date.now()}.json`;
+  link.download = `vernal-settings-${Date.now()}.json`;
   document.body.append(link);
   link.click();
   link.remove();

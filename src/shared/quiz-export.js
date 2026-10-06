@@ -16,7 +16,7 @@ export function downloadQuizDump(dump) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `coursepilot-quiz-${dump.quizId || 'unknown'}-${Date.now()}.json`;
+  link.download = `vernal-quiz-${dump.quizId || 'unknown'}-${Date.now()}.json`;
   document.body.append(link);
   link.click();
   link.remove();

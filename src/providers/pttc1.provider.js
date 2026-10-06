@@ -22,6 +22,34 @@ function frameVideoIn(frame) {
   }
 }
 
+function findLoginInput(doc, selectors, keywords = []) {
+  const direct = doc.querySelector(selectors);
+  if (direct) return direct;
+
+  return [...doc.querySelectorAll('input')].find((input) => {
+    const type = (input.type || '').toLowerCase();
+    if (type === 'hidden' || type === 'submit' || type === 'button') return false;
+    const haystack = [
+      input.name,
+      input.id,
+      input.autocomplete,
+      input.placeholder,
+      input.getAttribute?.('aria-label'),
+      input.labels ? [...input.labels].map((label) => label.textContent).join(' ') : '',
+    ].join(' ').normalize('NFC');
+    return keywords.some((keyword) => keyword.test(haystack));
+  }) || null;
+}
+
+function findLoginForm(doc, usernameInput, passwordInput) {
+  return (
+    usernameInput?.closest?.('form') ||
+    passwordInput?.closest?.('form') ||
+    doc.querySelector('#login, form[action*="login" i], form[action*="signin" i], form[action*="auth" i]') ||
+    null
+  );
+}
+
 // Moodle dựng nút bắt đầu bài trong .single_button. Nhãn đổi theo tình huống:
 // "Attempt quiz" khi mới, "Continue your attempt" / "Tiếp tục làm bài" khi đang làm dở.
 // Nút thật của PTTC1 là <button type="submit" id="single_button<hash>"> — không có
@@ -47,6 +75,23 @@ const matchesStartText = (value) =>
 // sách lượt, nên tuyệt đối không được bấm nhầm vào nó.
 const isPreviewLink = (element) => /\/mod\/quiz\/preview\.php/.test(element?.href || '');
 
+function isUsableNextControl(element, doc) {
+  if (element.disabled || element.hidden || element.classList?.contains('disabled') ||
+    element.getAttribute('aria-disabled') === 'true' || element.getAttribute('aria-hidden') === 'true') return false;
+  if (element.getClientRects && element.getClientRects().length === 0) return false;
+  if (element.tagName === 'A') {
+    const href = element.getAttribute('href')?.trim();
+    if (!href || href.startsWith('#') || /^javascript:/i.test(href)) return false;
+    if (doc.location?.href) {
+      const destination = new URL(href, doc.location.href);
+      const current = new URL(doc.location.href);
+      if (destination.origin === current.origin && destination.pathname === current.pathname &&
+        destination.search === current.search) return false;
+    }
+  }
+  return true;
+}
+
 export const pttc1Provider = {
   id: 'pttc1-moodle',
   matches(location) {
@@ -54,10 +99,14 @@ export const pttc1Provider = {
   },
   getAccount() {
     // Moodle thường đưa tên/số user vào menu khi người dùng đã đăng nhập.
-    const userNode = document.querySelector('[data-userid], #usermenu, .usermenu');
+    const userNode = document.querySelector('#usermenu, .usermenu, [data-region="usermenu"], .user-menu');
+    const profile = userNode?.querySelector?.('a[href*="/user/profile.php"], a[href*="/user/view.php"]');
+    const profileId = profile?.href ? new URL(profile.href, location.href).searchParams.get('id') : null;
     const accountId =
-      userNode?.dataset.userid || text('.usermenu .usertext, .usermenu .username');
-    if (!accountId) return { authenticated: false, hostname: HOSTNAME };
+      userNode?.dataset?.userid || profileId || text('.usermenu .usertext, .usermenu .username, #usermenu .usertext');
+    const authenticated = Boolean(accountId || document.body?.classList?.contains('loggedin') ||
+      document.querySelector('.usermenu a[href*="/login/logout.php"], #usermenu a[href*="/login/logout.php"]'));
+    if (!authenticated) return { authenticated: false, hostname: HOSTNAME };
     return {
       authenticated: true,
       accountId,
@@ -68,10 +117,28 @@ export const pttc1Provider = {
   isLoginPage(location) {
     return location.pathname === '/login/index.php';
   },
+  findLoginLogoutButton(doc) {
+    const message = (doc.body?.textContent || '').normalize('NFC');
+    if (!/đã đăng nhập|already logged in/i.test(message) ||
+      !/đăng xuất|log\s*out|logout/i.test(message)) return null;
+    return [...doc.querySelectorAll('a, button, input[type="submit"]')].find((element) => {
+      const label = (element.textContent || element.value || '').normalize('NFC').trim();
+      return /^(thoát|đăng xuất|log\s*out|logout)$/i.test(label) &&
+        !element.disabled && element.getAttribute('aria-disabled') !== 'true';
+    }) || null;
+  },
   login({ username, password }) {
-    const usernameInput = document.querySelector('#username, input[name="username"]');
-    const passwordInput = document.querySelector('#password, input[name="password"]');
-    const form = document.querySelector('#login, form[action*="login"]');
+    const usernameInput = findLoginInput(
+      document,
+      '#username, input[name="username"], input[name="email"], input[name="user"], input[name="userid"], input[type="email"], input[autocomplete="username"]',
+      [/user/i, /username/i, /email/i, /account/i, /tài khoản/i, /mã sinh viên/i],
+    );
+    const passwordInput = findLoginInput(
+      document,
+      '#password, input[name="password"], input[type="password"], input[autocomplete="current-password"]',
+      [/pass/i, /password/i, /mật khẩu/i],
+    );
+    const form = findLoginForm(document, usernameInput, passwordInput);
     if (!usernameInput || !passwordInput || !form)
       return { ok: false, reason: 'login-form-not-found' };
     if (document.querySelector('[data-sitekey], iframe[src*="recaptcha" i]'))
@@ -80,7 +147,8 @@ export const pttc1Provider = {
     passwordInput.value = password;
     usernameInput.dispatchEvent(new Event('input', { bubbles: true }));
     passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
-    form.requestSubmit();
+    if (typeof form.requestSubmit === 'function') form.requestSubmit();
+    else form.submit();
     return { ok: true };
   },
   findVideo(doc) {
@@ -103,14 +171,25 @@ export const pttc1Provider = {
       ...document.querySelectorAll(
         '#next-activity-link, a[rel="next"], .activity-navigation a, [data-region="activity-navigation"] a, button[aria-label*="Next" i], button[aria-label*="Tiếp" i]',
       ),
-    ];
+    ].filter((element) => element.id !== 'prev-activity-link' && element.getAttribute('rel') !== 'prev' &&
+      isUsableNextControl(element, document));
     return (
       candidates.find((element) =>
         /next|tiếp|kế tiếp/i.test(
-          `${element.textContent} ${element.getAttribute('aria-label') || ''}`,
+          `${element.textContent} ${element.getAttribute('aria-label') || ''}`.normalize('NFC'),
         ),
       ) ||
-      candidates.at(-1) ||
+      candidates.find((element) => element.id === 'next-activity-link' || element.getAttribute('rel') === 'next') ||
+      [...document.querySelectorAll('a, button')].find((element) =>
+        element.id !== 'prev-activity-link' && element.getAttribute('rel') !== 'prev' &&
+        isUsableNextControl(element, document) &&
+        [element.getAttribute('aria-label'), element.textContent].some(label =>
+          /^(?:(?:hoạt động|phần) (?:tiếp theo|kế tiếp)|next activity)$/i.test(
+            (label || '').normalize('NFC')
+              .replace(/[\s\u2039\u203a\u00ab\u00bb]+/g, ' ').trim(),
+          ),
+        ),
+      ) ||
       null
     );
   },

@@ -6,6 +6,33 @@ import { getActiveTab, sendToActiveTab } from '../../src/shared/browser.js';
 import { settingsStore } from '../../src/shared/settings-store.js';
 import { exportSettingsFile, readSettingsFile } from '../../src/shared/settings-file.js';
 
+function connectionStatusText(result) {
+  const detail = result?.error ? ` (${result.error})` : '';
+  return `Không kết nối được với tab LMS. Kiểm tra quyền truy cập trang web của extension, rồi tải lại tab.${detail}`;
+}
+
+function loginStatusText(result) {
+  if (!result || result.reason === 'connection-failed') return connectionStatusText(result);
+  if (result.error) return `Lỗi đăng nhập: ${result.error}`;
+  if (result?.ok) {
+    return result.loggingOut
+      ? 'Đang đăng xuất để đăng nhập bằng tài khoản đã lưu...'
+      : 'Đang gửi biểu mẫu đăng nhập...';
+  }
+
+  const messages = {
+    'captcha-required': 'LMS yêu cầu CAPTCHA; hãy tự hoàn tất.',
+    'username-missing': 'Chưa lưu tài khoản PTTC1. Mở cài đặt AI để nhập tài khoản.',
+    'password-missing': 'Chưa lưu mật khẩu PTTC1. Mở cài đặt AI và nhập lại mật khẩu.',
+    'login-form-not-found': 'Không nhận diện được biểu mẫu đăng nhập trên trang này. Hãy tải lại trang đăng nhập rồi thử lại.',
+    'login-page-missing': 'Hãy mở đúng trang đăng nhập PTTC1 rồi bấm lại.',
+    'domain-not-allowed': 'Domain LMS này chưa nằm trong danh sách được phép.',
+    'extension-disabled': 'Hãy bật công tắc nguồn để đăng nhập tự động.',
+  };
+
+  return messages[result?.reason] || 'Chưa thể đăng nhập tự động. Hãy kiểm tra tài khoản, mật khẩu và trang đăng nhập.';
+}
+
 function Popup() {
   const [status, setStatus] = useState('Đang kiểm tra trang học...');
   const [powerOn, setPowerOn] = useState(true);
@@ -44,34 +71,59 @@ function Popup() {
     setQuizExport(Boolean(settings.quizExportEnabled));
     const tab = await getActiveTab();
     const course = await sendToActiveTab(tab.id, { type: 'COURSE_STATUS' });
+    if (!course || course.error || course.reason === 'connection-failed') return setStatus(connectionStatusText(course));
     if (!course?.supported) return setStatus('Mở trang LMS PTTC1 để bắt đầu.');
+    if (!course.enabled) return setStatus('Extension đang tắt.');
+    if (course.courseFinished) return setStatus(course.returningToCourses
+      ? 'Đã kết thúc khóa. Đang quay về danh sách khóa học...'
+      : 'Đã kết thúc khóa. Bấm học tiếp để chuyển sang khóa khác.');
+    if (!course.autoNextLesson && tab.url?.includes('/mod/'))
+      return setStatus('Tự chuyển bài đang tắt; trang hiện tại sẽ không tự chuyển tiếp.');
     const account = await sendToActiveTab(tab.id, { type: 'ACCOUNT_STATUS' });
+    if (!account || account.error) return setStatus(connectionStatusText(account));
     setStatus(
       account?.authenticated
-        ? `Đã đăng nhập: ${account.displayName || account.accountId}`
-        : `Đã nhận diện: ${course.provider}. Hãy đăng nhập trên LMS.`,
+        ? `Đã đăng nhập: ${account.displayName || account.accountId || 'LMS'}`
+        : tab.url?.includes('/login/index.php')
+          ? 'Hãy đăng nhập trên LMS.'
+          : 'Đã kết nối LMS. Chưa đọc được thông tin tài khoản trên trang này.',
     );
   }
   async function login() {
-    const tab = await getActiveTab();
-    const account = await sendToActiveTab(tab.id, { type: 'ACCOUNT_STATUS' });
-    if (account?.authenticated) {
-      await sendToActiveTab(tab.id, { type: 'START_AUTO_RESUME' });
-      setStatus('Đang tìm khóa có tiến độ thấp nhất...');
+    let tab = await getActiveTab();
+    if (new URL(tab.url || 'about:blank').hostname !== 'lms.pttc1.edu.vn') {
+      const tabs = await browser.tabs.query({ url: 'https://lms.pttc1.edu.vn/*' });
+      tab = tabs.find((item) => /\/mod\//.test(new URL(item.url).pathname)) || tabs[0] || tab;
+      if (tabs.length) await browser.tabs.update(tab.id, { active: true });
+    }
+    const course = await sendToActiveTab(tab.id, { type: 'COURSE_STATUS' });
+    if (course?.supported && !tab.url?.includes('/login/index.php')) {
+      const result = await sendToActiveTab(tab.id, { type: 'START_AUTO_RESUME' });
+      setStatus(result?.ok
+        ? result.returningToCourses
+          ? 'Đã kết thúc khóa. Đang quay về danh sách khóa học...'
+          : result.resumedCurrentCourse
+            ? result.waitingForActivities
+              ? 'Đang chờ danh sách nội dung của chương tải xong...'
+              : 'Đang mở nội dung trong khóa học hiện tại...'
+          : result.resumedCurrentActivity
+          ? 'Đang tiếp tục hoạt động hiện tại.'
+          : 'Đang tìm khóa có tiến độ thấp nhất...'
+        : result?.reason === 'extension-disabled'
+          ? 'Hãy bật công tắc nguồn để tiếp tục học.'
+          : 'Chưa thể tiếp tục trên tab LMS này.');
       return;
+    }
+    if (new URL(tab.url || 'about:blank').hostname === 'lms.pttc1.edu.vn' &&
+      !tab.url?.includes('/login/index.php')) {
+      return setStatus(connectionStatusText(course));
     }
     if (!tab.url?.includes('lms.pttc1.edu.vn/login/index.php')) {
       await browser.tabs.create({ url: 'https://lms.pttc1.edu.vn/login/index.php' });
       return setStatus('Đã mở trang đăng nhập. Bấm lại để đăng nhập tự động.');
     }
     const r = await sendToActiveTab(tab.id, { type: 'LOGIN_WITH_SAVED_CREDENTIALS' });
-    setStatus(
-      r?.ok
-        ? 'Đang gửi biểu mẫu đăng nhập...'
-        : r?.reason === 'captcha-required'
-          ? 'LMS yêu cầu CAPTCHA; hãy tự hoàn tất.'
-          : 'Chưa lưu tài khoản/mật khẩu hoặc không nhận diện được biểu mẫu.',
-    );
+    setStatus(loginStatusText(r));
   }
   async function togglePower() {
     const value = !powerOn;
@@ -128,19 +180,19 @@ function Popup() {
   if (screen === 'settings')
     return <InlineSettings onBack={() => window.location.assign(window.location.pathname)} />;
   return (
-    <main className="reference-popup w-90">
+    <main className="reference-popup">
       <div className="reference-panel home-panel">
         <header className="flex items-center justify-between">
           <div className="reference-logo">
             <span className="reference-mark" />
-            <span>CoursePilot</span>
+            <span>Vernal</span>
           </div>
           <button
             className={`reference-power ${powerOn ? 'is-on' : 'is-off'}`}
             onClick={togglePower}
             aria-pressed={powerOn}
-            aria-label={powerOn ? 'Tắt CoursePilot' : 'Bật CoursePilot'}
-            title={powerOn ? 'Tắt CoursePilot' : 'Bật CoursePilot'}
+            aria-label={powerOn ? 'Tắt Vernal' : 'Bật Vernal'}
+            title={powerOn ? 'Tắt Vernal' : 'Bật Vernal'}
           >
             ⏻
           </button>
@@ -239,6 +291,14 @@ function Popup() {
           <span className="reference-chevron">›</span>
         </div>
         <div className="home-actions mt-5 grid gap-3">
+          <Button className="ai-button w-full" variant="outline" colorPalette="green" onClick={async () => {
+            try {
+              const result = await browser.runtime.sendMessage({type: 'RUN_LOG_EXPORT'});
+              setStatus(result?.ok ? `Đã lưu log: ${result.filename}` : 'Chưa có nhật ký phiên học.');
+            } catch {
+              setStatus('Không tải được log. Nhật ký vẫn được lưu trong extension.');
+            }
+          }}>Tải log phiên học</Button>
           <Button
             className="ai-button w-full"
             onClick={login}
@@ -324,8 +384,8 @@ function InlineSettings({ onBack }) {
     setBackup('Đã tải cấu hình. File chứa mật khẩu và API key dạng chữ thường.');
   }
   return (
-    <main className="reference-popup w-90">
-      <div className="reference-panel">
+    <main className="reference-popup">
+      <div className="reference-panel inline-settings-panel">
         <header className="flex items-center justify-between">
           <button className="reference-power" onClick={onBack} aria-label="Quay lại">
             ←
@@ -438,7 +498,7 @@ function InlineSettings({ onBack }) {
               if (file) importSettings(file);
             }}
           />
-          <div className="mt-2 grid gap-2">
+          <div className="backup-actions mt-2 grid grid-cols-2 gap-2">
             <Button
               className="ai-button w-full"
               variant="outline"

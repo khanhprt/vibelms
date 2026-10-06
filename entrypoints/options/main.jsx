@@ -48,11 +48,11 @@ function Options() {
       <div className="settings-panel">
         <header className="flex items-center gap-3">
           <div className="brand-orb">
-            <img src="/icon.png" alt="CoursePilot" />
+            <img src="/icon.png" alt="Vernal" />
           </div>
           <div>
             <p className="eyebrow">Configuration studio</p>
-            <h1 className="m-0 text-2xl font-black text-white">CoursePilot AI</h1>
+            <h1 className="m-0 text-2xl font-black text-white">Vernal AI</h1>
           </div>
         </header>
         <p className="settings-intro">

@@ -1,0 +1,17 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e4]:
+    - button "Attempt quiz" [ref=f1e7]
+    - generic [ref=f1e8]:
+      - text: "Giới hạn thời gian: 15 phút"
+      - generic [ref=f1e9]:
+        - button "Bắt đầu làm bài" [ref=f1e10]
+        - button "Hủy" [ref=f1e11]
+  - dialog [ref=f1e13]:
+    - generic [ref=f1e14]:
+      - button "Close" [ref=f1e15]
+      - heading "Bắt đầu làm bài" [level=5] [ref=f1e16]
+    - generic [ref=f1e18]:
+      - text: "Giới hạn thời gian: 15 phút"
+      - generic [ref=f1e19]:
+        - button "Bắt đầu làm bài" [ref=f1e20]
+        - button "Hủy" [ref=f1e21]

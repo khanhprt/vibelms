@@ -1,21 +1,23 @@
 .settings-page {
   min-height: 100vh;
-  padding: 18px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.4;
   background: linear-gradient(135deg, #06452e, #111a32 28%, #080d20 72%);
 }
 .settings-panel {
   width: min(100%, 760px);
   margin: 0 auto;
-  padding: 22px 24px 18px;
+  padding: 16px 18px 12px;
   border: 1px solid rgba(139, 232, 186, 0.35);
-  border-radius: 18px;
+  border-radius: 8px;
   background: linear-gradient(155deg, #18294b, #101630 64%, #0c1128);
   box-shadow:
     0 24px 60px #0008,
     inset 0 1px #ffffff14;
 }
 .settings-panel header {
-  padding-bottom: 15px;
+  padding-bottom: 10px;
   border-bottom: 1px solid rgba(198, 255, 223, 0.15);
 }
 .settings-panel .brand-orb {
@@ -26,19 +28,19 @@
   box-shadow: 0 0 22px #63da9c66;
 }
 .settings-panel h1 {
-  font-size: 20px !important;
+  font-size: 18px !important;
 }
 .settings-intro {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   color: #a8bcb7;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
 }
 .settings-form {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 .settings-panel .section-card {
-  padding: 16px 0;
+  padding: 10px 0;
   border: 0;
   border-radius: 0;
   border-bottom: 1px solid rgba(198, 255, 223, 0.13);
@@ -48,7 +50,7 @@
   border-bottom: 0;
 }
 .settings-panel .section-card h2 {
-  font-size: 14px;
+  font-size: 13px;
 }
 .settings-panel .field-label {
   color: #d6f8e4;
@@ -56,7 +58,8 @@
 .settings-panel .ai-input {
   border-color: rgba(142, 232, 185, 0.22);
   background: #0b1230;
-  padding: 10px 12px;
+  padding: 6px 9px;
+  font-size: 12px;
 }
 .settings-panel .ai-input:focus {
   border-color: #74e5aa;
@@ -72,12 +75,39 @@
   color: #79eab2;
 }
 .settings-panel .ai-button {
-  margin-top: 14px;
-  border-radius: 10px;
+  margin-top: 8px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 6px;
+  font-size: 12px;
 }
 .settings-panel label.flex {
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  gap: 10px;
   border: 1px solid rgba(139, 232, 186, 0.12);
   background: #ffffff06;
+}
+.settings-panel .section-card > .grid {
+  margin-top: 8px;
+  gap: 8px;
+}
+.settings-panel .section-card .mt-3 {
+  margin-top: 8px;
+}
+.settings-panel .field-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.settings-panel .eyebrow {
+  letter-spacing: 0;
+}
+.settings-panel .text-sm {
+  font-size: 12px;
+}
+.settings-panel textarea.ai-input {
+  min-height: 60px;
 }
 @media (min-width: 640px) {
   .settings-panel .section-card > div {

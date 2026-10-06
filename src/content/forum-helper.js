@@ -1,21 +1,75 @@
 import { settingsStore } from '../shared/settings-store.js';
+import { recordLessonFailure } from '../shared/run-log.js';
+import { requestLlmWithRetry } from '../shared/llm-request.js';
 
-const HELPER_ID = 'coursepilot-forum-helper';
+const HELPER_ID = 'vernal-forum-helper';
 
-const FORUM_CONTEXT_KEY = 'coursepilot_forum_context';
-const FORUM_STATE_PREFIX = 'coursepilot_forum_state_';
-const OPEN_TOP_DISCUSSION_KEY = 'coursepilot_open_top_discussion';
+const FORUM_CONTEXT_KEY = 'vernal_forum_context';
+const FORUM_STATE_PREFIX = 'vernal_forum_state_';
+const OPEN_TOP_DISCUSSION_KEY = 'vernal_open_top_discussion';
 
-const AUTO_CREATE_FORUM_PREFIX = 'coursepilot_forum_auto_create_';
+const AUTO_CREATE_FORUM_PREFIX = 'vernal_forum_auto_create_';
 
 // Lưu trạng thái Forum đã hoàn thành reply.
 // Dùng storage.local để reload vẫn còn.
 const FORUM_REPLY_COMPLETE_PREFIX =
-  'coursepilot_forum_reply_complete_';
+  'vernal_forum_reply_complete_';
 
 // Discussion đang chờ được reply.
 const PENDING_REPLY_DISCUSSION_KEY =
-  'coursepilot_pending_reply_discussion';
+  'vernal_pending_reply_discussion';
+
+const submittingReplies = new Set();
+const ANNOUNCEMENT_FORUM_PREFIX = 'vernal_forum_announcement_';
+
+function currentForumId() {
+  const url = new URL(location.href);
+  if (url.pathname.endsWith('/view.php')) return url.searchParams.get('id');
+  if (url.searchParams.get('forum')) return url.searchParams.get('forum');
+  const link = document.querySelector('.breadcrumb a[href*="/mod/forum/view.php"], [aria-label="breadcrumb"] a[href*="/mod/forum/view.php"]');
+  return link?.href ? new URL(link.href, location.href).searchParams.get('id') : null;
+}
+
+function isAnnouncementForum() {
+  if (!location.pathname.startsWith('/mod/forum/')) return false;
+  const forumId = currentForumId();
+  if (forumId && sessionStorage.getItem(`${ANNOUNCEMENT_FORUM_PREFIX}${forumId}`) === 'true') return true;
+  const labels = [...document.querySelectorAll(
+    '#page-header h1, #page-header h2, .page-header-headings h1, .page-header-headings h2, #region-main > h1, #region-main > h2, #region-main .activity-header h1, #region-main .activity-header h2, .breadcrumb a[href*="/mod/forum/view.php"], [aria-label="breadcrumb"] a[href*="/mod/forum/view.php"], .breadcrumb-item:last-child, [aria-label="breadcrumb"] li:last-child',
+  )];
+  const announcement = labels.some(node =>
+    /^(?:(?:diễn đàn\s+)?thông báo|announcements?|news(?: forum)?)$/i.test(clean(node.textContent).normalize('NFC')),
+  );
+  if (announcement && forumId) sessionStorage.setItem(`${ANNOUNCEMENT_FORUM_PREFIX}${forumId}`, 'true');
+  return announcement;
+}
+
+function findAddTopicButton() {
+  return document.querySelector('a[data-toggle="collapse"][href="#collapseAddForm"], button[data-target="#collapseAddForm"], a[href*="/mod/forum/post.php?forum="]') ||
+    [...document.querySelectorAll('a, button')].find((element) =>
+      /thêm một chủ đề thảo luận mới|add a new discussion topic/i.test(clean(element.textContent)),
+    );
+}
+
+export function forumRequiresTask() {
+  if (isAnnouncementForum()) return false;
+  if (location.pathname.startsWith('/mod/forum/post.php')) return true;
+  if (location.pathname.startsWith('/mod/forum/discuss.php')) return Boolean(replyButton());
+  if (!location.pathname.startsWith('/mod/forum/view.php')) return false;
+  const forumId = new URL(location.href).searchParams.get('id') || location.pathname;
+  const button = findAddTopicButton();
+  return Boolean(button && !button.disabled && button.getAttribute('aria-disabled') !== 'true') ||
+    Boolean(sessionStorage.getItem(`${AUTO_CREATE_FORUM_PREFIX}${forumId}`)) ||
+    sessionStorage.getItem(OPEN_TOP_DISCUSSION_KEY) === 'true';
+}
+
+export async function isCurrentForumCompleted() {
+  if (!location.pathname.startsWith('/mod/forum/discuss.php')) return false;
+  const discussionId = getDiscussionId();
+  if (submittingReplies.has(discussionId)) return false;
+  const completed = await isForumReplyCompleted(discussionId);
+  return completed && !submittingReplies.has(discussionId);
+}
 
 const clean = (value) =>
   (value || '')
@@ -50,8 +104,27 @@ function extractDraft(response) {
   return String(content || '');
 }
 
+function normalizeDraftJson(content) {
+  const withoutFence = content
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  if (!withoutFence) return '';
+
+  const firstBrace = withoutFence.indexOf('{');
+  const lastBrace = withoutFence.lastIndexOf('}');
+
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return withoutFence.slice(firstBrace, lastBrace + 1).trim();
+  }
+
+  return withoutFence;
+}
+
 
 function parseDraft(response) {
+  if (response?.error) throw new Error(response.error);
   const content = extractDraft(response);
 
   console.group('===== FORUM LLM RESPONSE =====');
@@ -65,10 +138,7 @@ function parseDraft(response) {
     );
   }
 
-  const raw = content
-    .replace(/^```json\s*/i, '')
-    .replace(/```$/i, '')
-    .trim();
+  const raw = normalizeDraftJson(content);
 
   if (!raw) {
     throw new Error(
@@ -91,7 +161,8 @@ function parseDraft(response) {
     );
   }
 
-  if (!draft.title || !draft.content) {
+  if (typeof draft?.title !== 'string' || !draft.title.trim() ||
+    typeof draft?.content !== 'string' || !draft.content.trim()) {
     throw new Error(
       'LLM không trả về đủ title và content.'
     );
@@ -244,10 +315,11 @@ async function collectForumContext() {
 }
 
 async function applyPendingForumDraft() {
+  if (isAnnouncementForum()) return false;
   const {
-    coursepilotForumDraft: draft
+    vernalForumDraft: draft
   } = await browser.storage.local.get(
-    'coursepilotForumDraft'
+    'vernalForumDraft'
   );
 
   if (!draft) {
@@ -379,7 +451,7 @@ async function applyPendingForumDraft() {
 
   // Draft không còn cần nữa
   await browser.storage.local.remove(
-    'coursepilotForumDraft'
+    'vernalForumDraft'
   );
 
   // Pending cũng hoàn thành
@@ -391,6 +463,7 @@ async function applyPendingForumDraft() {
     '[FORUM POST] Click Gửi Bài Viết Lên Diễn Đàn...'
   );
 
+  if (isAnnouncementForum()) return false;
   submitButton.click();
 
   return true;
@@ -441,11 +514,12 @@ function discussionContentHtml(content) {
 }
 
 async function fillDiscussionForm({ subject, message }, draft) {
+  if (isAnnouncementForum()) return;
   if (subject) {
     subject.value = draft.title;
     const form = subject.form;
-    if (form && !form.dataset.coursepilotOpenTopOnSubmit) {
-      form.dataset.coursepilotOpenTopOnSubmit = 'true';
+    if (form && !form.dataset.vernalOpenTopOnSubmit) {
+      form.dataset.vernalOpenTopOnSubmit = 'true';
       form.addEventListener('submit', () => {
         // Only arm this after the user explicitly submits their new topic.
         sessionStorage.setItem(OPEN_TOP_DISCUSSION_KEY, 'true');
@@ -521,6 +595,9 @@ async function isForumReplyCompleted(discussionId) {
 async function markForumReplyCompleted(discussionId) {
   if (!discussionId) return;
 
+  // The current document is still submitting; consume completion after navigation.
+  submittingReplies.add(discussionId);
+
   const key =
     forumReplyCompleteKey(discussionId);
 
@@ -535,6 +612,7 @@ async function markForumReplyCompleted(discussionId) {
 }
 
 async function mountDiscussionReplyHelper() {
+  if (isAnnouncementForum()) return;
   const discussionId = getDiscussionId();
 
   if (!discussionId) {
@@ -566,7 +644,7 @@ async function mountDiscussionReplyHelper() {
   }
 
   const replyRunKey =
-    `coursepilot_forum_reply_running_${discussionId}`;
+    `vernal_forum_reply_running_${discussionId}`;
 
   if (
     sessionStorage.getItem(replyRunKey) ===
@@ -638,22 +716,17 @@ async function mountDiscussionReplyHelper() {
       '[FORUM REPLY] Đang gọi AI tạo phản hồi...'
     );
 
-    const response =
-      await browser.runtime.sendMessage({
+    if (isAnnouncementForum()) return;
+    const draft =
+      await requestLlmWithRetry({
         type: 'GENERATE_FORUM_REPLY',
         payload: {
           courseName,
           chapterName,
           question
         },
-      });
-
-    console.log(
-      '[FORUM REPLY] Raw response:',
-      response
-    );
-
-    const draft = parseDraft(response);
+      }, { parse: parseDraft, shouldContinue: () => !isAnnouncementForum() });
+    if (!draft) return;
 
     console.log(
       '[FORUM REPLY] Draft:',
@@ -662,7 +735,7 @@ async function mountDiscussionReplyHelper() {
 
     // Lưu draft đề phòng reply.click() chuyển sang post.php
     await browser.storage.local.set({
-      coursepilotForumDraft: draft
+      vernalForumDraft: draft
     });
 
     // ================================
@@ -683,6 +756,7 @@ async function mountDiscussionReplyHelper() {
       discussionId
     );
 
+    if (isAnnouncementForum()) return;
     reply.click();
 
     // ================================
@@ -720,7 +794,7 @@ async function mountDiscussionReplyHelper() {
     );
 
     await browser.storage.local.remove(
-      'coursepilotForumDraft'
+      'vernalForumDraft'
     );
 
     console.log(
@@ -845,6 +919,7 @@ async function mountDiscussionReplyHelper() {
     );
 
 
+    if (isAnnouncementForum()) return;
     submitButton.click();
 
     console.log(
@@ -855,6 +930,7 @@ async function mountDiscussionReplyHelper() {
     sessionStorage.removeItem(
       replyRunKey
     );
+    await recordLessonFailure(error.message || String(error), {stage: 'forum-reply'});
 
     console.error(
       '[FORUM REPLY] ERROR:',
@@ -864,6 +940,7 @@ async function mountDiscussionReplyHelper() {
 }
 
 function openTopDiscussionAfterSubmit() {
+  if (isAnnouncementForum()) return false;
   if (!location.pathname.startsWith('/mod/forum/view.php')) return false;
   if (sessionStorage.getItem(OPEN_TOP_DISCUSSION_KEY) !== 'true') return false;
   sessionStorage.removeItem(OPEN_TOP_DISCUSSION_KEY);
@@ -876,6 +953,7 @@ function openTopDiscussionAfterSubmit() {
 }
 
 async function autoCreateForumDiscussion() {
+  if (isAnnouncementForum()) return false;
   // Chỉ chạy ở trang chính Forum
   if (!location.pathname.startsWith('/mod/forum/view.php')) {
     return false;
@@ -898,6 +976,10 @@ async function autoCreateForumDiscussion() {
     return true;
   }
 
+  const addTopicButton = findAddTopicButton();
+  // Announcement/read-only forums have no posting task.
+  if (!addTopicButton || addTopicButton.disabled || addTopicButton.getAttribute('aria-disabled') === 'true') return false;
+
   sessionStorage.setItem(runKey, 'running');
 
   try {
@@ -906,25 +988,6 @@ async function autoCreateForumDiscussion() {
     // ================================
     // 1. TÌM NÚT THÊM CHỦ ĐỀ MỚI
     // ================================
-
-    const addTopicButton =
-      document.querySelector(
-        'a[data-toggle="collapse"][href="#collapseAddForm"]'
-      ) ||
-      document.querySelector(
-        'button[data-target="#collapseAddForm"]'
-      ) ||
-      [...document.querySelectorAll('a, button')].find((element) =>
-        /thêm một chủ đề thảo luận mới|add a new discussion topic/i.test(
-          clean(element.textContent)
-        )
-      );
-
-    if (!addTopicButton) {
-      throw new Error(
-        'Không tìm thấy nút "Thêm một chủ đề thảo luận mới".'
-      );
-    }
 
     const addForm = document.querySelector('#collapseAddForm');
 
@@ -946,6 +1009,7 @@ async function autoCreateForumDiscussion() {
     // 3. ĐỌC CONTEXT
     // ================================
 
+    if (isAnnouncementForum()) return false;
     const forumContext = await collectForumContext();
 
     saveForumContext(forumContext);
@@ -959,12 +1023,12 @@ async function autoCreateForumDiscussion() {
     // 4. GỌI LLM
     // ================================
 
-    const response = await browser.runtime.sendMessage({
+    if (isAnnouncementForum()) return false;
+    const draft = await requestLlmWithRetry({
       type: 'GENERATE_DISCUSSION',
       payload: forumContext,
-    });
-
-    const draft = parseDraft(response);
+    }, { parse: parseDraft, shouldContinue: () => !isAnnouncementForum() });
+    if (!draft) return false;
 
     console.log('Forum draft:', draft);
 
@@ -1048,11 +1112,13 @@ async function autoCreateForumDiscussion() {
     // 8. CLICK ĐĂNG BÀI
     // ================================
 
+    if (isAnnouncementForum()) return false;
     submitButton.click();
 
     return true;
   } catch (error) {
     sessionStorage.removeItem(runKey);
+    await recordLessonFailure(error.message || String(error), {stage: 'forum-create'});
 
     console.error(
       'Không thể tự động tạo Forum:',
@@ -1067,6 +1133,13 @@ export async function mountForumHelper() {
   if (!location.pathname.startsWith('/mod/forum/')) {
     return;
   }
+  if (isAnnouncementForum()) {
+    const forumId = currentForumId();
+    if (forumId) sessionStorage.removeItem(`${AUTO_CREATE_FORUM_PREFIX}${forumId}`);
+    sessionStorage.removeItem(OPEN_TOP_DISCUSSION_KEY);
+    document.querySelector(`#${HELPER_ID}`)?.remove();
+    return;
+  }
   const { forumHelperEnabled } = await settingsStore.get();
   if (!forumHelperEnabled) {
     document.querySelector(`#${HELPER_ID}`)?.remove();
@@ -1076,7 +1149,12 @@ export async function mountForumHelper() {
   // Nếu đang ở trang post.php sau khi navigation,
   // thử áp dụng draft đã lưu trước.
   if (location.pathname.startsWith('/mod/forum/post.php')) {
-    await applyPendingForumDraft();
+    try {
+      await applyPendingForumDraft();
+    } catch (error) {
+      await recordLessonFailure(error.message || String(error), {stage: 'forum-submit'});
+      console.error('Forum submission failed:', error);
+    }
     return;
   }
 
@@ -1087,6 +1165,7 @@ export async function mountForumHelper() {
 
   // Nếu đang ở bên trong một discussion thì vẫn giữ helper reply hiện tại.
   if (location.pathname.startsWith('/mod/forum/discuss.php')) {
+    if (!forumRequiresTask()) return;
     await mountDiscussionReplyHelper();
     return;
   }

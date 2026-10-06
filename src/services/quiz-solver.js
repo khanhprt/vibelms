@@ -1,7 +1,6 @@
 import { settingsStore } from '../shared/settings-store.js';
 
 const VILAO_CHAT_COMPLETIONS_URL = 'https://api.vilao.ai/v1/chat/completions';
-const LETTERS = 'ABCDEFGH';
 
 function extractContent(response) {
   const content =
@@ -65,10 +64,10 @@ function parseSuggestion(response) {
   return parsed;
 }
 
-function buildPrompt({ stem, options, assets }) {
+function buildPrompt({ stem, type, quizName, options, assets = [] }) {
   const lines = options.map(
     (option, index) =>
-      `${LETTERS[index]}. ${option.label} [value="${option.value}"]`,
+      `Lựa chọn ${index + 1}${option.displayLabel ? ` (nhãn hiển thị: ${option.displayLabel})` : ''}: ${option.label} [value=${JSON.stringify(String(option.value))}]`,
   );
 
   const allowedValues = options.map((option) => String(option.value));
@@ -77,10 +76,26 @@ function buildPrompt({ stem, options, assets }) {
     ? `\nLưu ý: câu hỏi có ${assets.length} hình ảnh/công thức đính kèm mà bạn không thấy được. Nếu phần chữ không đủ để kết luận, hãy trả value là "UNKNOWN".`
     : '';
 
-  return `Câu hỏi: ${stem}${imageNote}
+  const selectionNote = type === 'single' || type === 'truefalse'
+    ? `\nLoại câu hỏi: CHỈ CHỌN MỘT đáp án (radio).
+Đề yêu cầu một phương án phù hợp nhất, không yêu cầu liệt kê mọi phát biểu có thể đúng.
+Nếu nhiều phương án đúng theo nghĩa rộng, đối chiếu phạm vi câu hỏi, thuật ngữ chuyên ngành và cách phân loại thường dùng trong môn học để chọn phương án trực tiếp, điển hình và sát ý đề nhất.
+Không trả UNKNOWN chỉ vì "nhiều phương án đúng" hoặc "không có lựa chọn ghép". Khi thiếu tài liệu môn học nhưng vẫn có thể so sánh các phương án, chọn phương án có căn cứ mạnh nhất và giải thích ngắn gọn tiêu chí lựa chọn; không khẳng định chắc chắn nếu còn chưa chắc.
+Chỉ trả UNKNOWN khi thiếu dữ liệu thiết yếu (ví dụ hình ảnh hoặc tham chiếu bị mất) khiến không thể đánh giá các phương án. Không tự tạo đáp án ghép hay trả nhiều value.`
+    : '';
+
+  return `${quizName ? `Bài/quiz: ${quizName}\n` : ''}Câu hỏi: ${stem}${imageNote}${selectionNote}
 
 Các lựa chọn:
 ${lines.join('\n')}
+
+Quy tắc đọc lựa chọn ghép và tham chiếu:
+- Các số "Lựa chọn 1, 2, ..." chỉ dùng để liệt kê, không phải ký hiệu mệnh đề của đề bài.
+- "a và b", "b và c", "cả a, b, c", "tất cả các phương án trên" là các lựa chọn ghép. Không kết luận thiếu dữ liệu chỉ vì lựa chọn dùng ký hiệu thay vì lặp lại nội dung.
+- Trước tiên xác định các mệnh đề đơn trong câu hỏi và các lựa chọn, đánh giá từng mệnh đề bằng kiến thức môn học, rồi đối chiếu với lựa chọn ghép.
+- Nếu đề định nghĩa a/b/c trong phần câu hỏi, dùng đúng định nghĩa đó. Nếu ký hiệu tham chiếu nhãn phương án, dùng nhãn gốc được hiển thị; phân biệt nhãn lựa chọn với ký hiệu mệnh đề khi đề sử dụng cả hai.
+- Các phương án có thể bị xáo trộn. Không tự gán a/b/c cho các mệnh đề đơn theo thứ tự đang hiển thị, không suy ra thứ tự gốc chỉ từ vị trí, và không dùng tham chiếu vòng (một lựa chọn ghép tham chiếu chính nó).
+- Chỉ chọn lựa chọn ghép khi xác định được nội dung các mệnh đề mà nó tham chiếu và tất cả các mệnh đề đó đều đúng. Nếu còn nhiều cách hiểu dẫn tới các đáp án khác nhau, trả UNKNOWN và nêu ngắn gọn tham chiếu nào mơ hồ.
 
 Hãy chọn đáp án đúng và trả về CHÍNH XÁC value của lựa chọn đó.
 
@@ -92,7 +107,7 @@ Chỉ trả về JSON hợp lệ, không markdown, đúng cấu trúc:
 }
 
 
-export async function suggestAnswer({ stem, options, assets }) {
+export async function suggestAnswer({ stem, type, quizName, options, assets }) {
   const settings = await settingsStore.get();
   const { llmApiKey, llmModel } = settings;
 
@@ -110,6 +125,8 @@ export async function suggestAnswer({ stem, options, assets }) {
 
   const prompt = buildPrompt({
     stem,
+    type,
+    quizName,
     options,
     assets,
   });
@@ -141,7 +158,9 @@ export async function suggestAnswer({ stem, options, assets }) {
         {
           role: 'system',
           content:
-            'Bạn là trợ lý học tập. ' +
+            'Bạn là trợ lý giải trắc nghiệm theo ngữ cảnh môn học. ' +
+            'Tuân thủ loại câu hỏi và quy tắc lựa chọn trong yêu cầu. ' +
+            'Với câu chỉ chọn một đáp án, hãy chọn phương án phù hợp nhất dù có phương án khác đúng theo nghĩa rộng. ' +
             'Bắt buộc chỉ trả về đúng một JSON object. ' +
             'Không markdown, không code block, không nội dung ngoài JSON. ' +
             'JSON phải có đúng hai trường value và why. ' +

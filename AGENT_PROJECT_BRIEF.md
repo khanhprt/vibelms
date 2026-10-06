@@ -1,10 +1,10 @@
-# CoursePilot - Agent Project Brief
+# Vernal - Agent Project Brief
 
 This document describes the project's features, architecture, functions, and implementation details so another agent can understand the codebase quickly and make changes within the appropriate modules. Some Vietnamese strings in the source and README appeared garbled when read through the terminal; the notes below flag those observations without assuming whether the underlying files or terminal decoding are responsible.
 
 ## 1. Quick Overview
 
-CoursePilot is a Chrome extension built with WXT, React, and JavaScript ESM. Its main features are:
+Vernal is a Chrome extension built with WXT, React, and JavaScript ESM. Its main features are:
 
 - Support for learning on LMS websites, with a dedicated PTTC1 Moodle provider (`lms.pttc1.edu.vn`) and a generic LMS provider.
 - Automatic learning-page detection, video playback when enabled, and navigation to the next lesson after two seconds when enabled.
@@ -77,7 +77,7 @@ File: `wxt.config.js`.
 - Enables React through `modules: ['@wxt-dev/module-react']`.
 - Adds the Tailwind plugin through Vite.
 - Manifest configuration:
-  - `name`: CoursePilot.
+  - `name`: Vernal.
   - `description`: describes the extension as an online-learning assistant.
   - `permissions`: `storage`, `activeTab`.
   - `host_permissions`: `https://*/*`.
@@ -421,7 +421,7 @@ Calls `markAutoResumeAfterLogin()` and `resumeLowestProgressCourse()`, then retu
 
 ### `watchFrameLoad(frame)`
 
-Marks an iframe with `frame.dataset.coursepilotFrameWatch = 'true'` to avoid duplicate listeners. Registers a one-time load listener that invokes `watchCurrentVideo()` again when the frame loads.
+Marks an iframe with `frame.dataset.vernalFrameWatch = 'true'` to avoid duplicate listeners. Registers a one-time load listener that invokes `watchCurrentVideo()` again when the frame loads.
 
 ### `watchCurrentVideo()`
 
@@ -495,7 +495,7 @@ Stores the current flow phase in page `sessionStorage`.
 
 ### Constants and Helpers
 
-- `FLOW_KEY = 'coursepilot:auto-resume-phase'`.
+- `FLOW_KEY = 'vernal:auto-resume-phase'`.
 - `COURSES_PATH = '/my/courses.php'`.
 - `navigateAfterDelay(url)`: calls `location.assign(url)` after 500 ms.
 - `courseCards()`: selects `.card.dashboard-card, .coursebox, [data-region="course-content"] .card`.
@@ -535,7 +535,7 @@ Displays a floating helper on forum pages. It generates a draft, opens a posting
 
 ### `HELPER_ID`
 
-`'coursepilot-forum-helper'`.
+`'vernal-forum-helper'`.
 
 ### `extractDraft(response)`
 
@@ -555,13 +555,13 @@ Reads breadcrumbs using `.breadcrumb-item` and `[aria-label="breadcrumb"] li`.
 ### `applyPendingForumDraft()`
 
 1. Runs only on paths beginning with `/mod/forum/post.php`.
-2. Reads `coursepilotForumDraft` from extension local storage.
+2. Reads `vernalForumDraft` from extension local storage.
 3. Finds the subject using `#id_subject, input[name="subject"]`.
 4. Finds the message using `textarea[name="message"], textarea[name*="message" i], textarea`.
 5. Returns `false` if the draft or required fields are missing.
 6. Sets the subject to `draft.title` and the message to `draft.question`.
 7. Dispatches `input` events for both fields.
-8. Removes `coursepilotForumDraft` from storage.
+8. Removes `vernalForumDraft` from storage.
 9. Inserts a review note containing `draft.answer` before the nearby message form group. The Vietnamese note text appeared garbled in terminal output.
 10. Returns `true`.
 
@@ -584,7 +584,7 @@ Reads breadcrumbs using `.breadcrumb-item` and `[aria-label="breadcrumb"] li`.
 }
 ```
 
-6. Parses the response and saves `{ coursepilotForumDraft: draft }`.
+6. Parses the response and saves `{ vernalForumDraft: draft }`.
 7. Finds a new-topic link using `a[href*="/mod/forum/post.php?forum="]` or the fallback `a[href*="discuss.php?"]` and navigates when a link is available.
 8. On failure, re-enables the button and displays the error on it.
 
@@ -594,7 +594,7 @@ File: `src/content/course-status-panel.js`.
 
 ### `PANEL_ID`
 
-`'coursepilot-course-status'`.
+`'vernal-course-status'`.
 
 ### `escapeHtml(value)`
 
@@ -648,7 +648,7 @@ Handles the resume-learning button:
 | `toggleAutoNext()` | Inverts and saves `autoNextLesson`. |
 | `toggleAutoLogin()` | Inverts and saves `pttc1AutoLogin`. |
 
-The home screen contains the CoursePilot header and power button, status indicators, account status, course-panel/video/next-lesson/auto-login toggles, and buttons for resuming learning and opening inline AI settings.
+The home screen contains the Vernal header and power button, status indicators, account status, course-panel/video/next-lesson/auto-login toggles, and buttons for resuming learning and opening inline AI settings.
 
 ### `InlineSettings({ onBack })`
 
@@ -755,7 +755,7 @@ Forum page
   -> background handleMessage()
   -> generateDiscussionDraft()
   -> parseDraft()
-  -> storage.local.set({ coursepilotForumDraft })
+  -> storage.local.set({ vernalForumDraft })
   -> navigate to the forum posting form
   -> applyPendingForumDraft()
   -> fill subject/message and display the suggested answer

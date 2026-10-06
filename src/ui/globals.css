@@ -179,12 +179,14 @@ body {
 
 /* Compact popup inspired by a desktop control panel: calm mint, dark navy, clear gutters. */
 .reference-popup {
-  width: 360px;
-  padding: 6px;
+  width: 340px;
+  padding: 4px;
+  font-size: 12px;
+  line-height: 1.4;
   background: linear-gradient(135deg, #064b31, #0c1a2e 32%, #0c1230);
 }
 .reference-panel {
-  padding: 22px 24px 16px;
+  padding: 12px 14px;
   border: 1px solid rgba(178, 255, 218, 0.26);
   background: linear-gradient(160deg, #182448 0%, #10152f 56%, #0b1025 100%);
   box-shadow:
@@ -196,14 +198,14 @@ body {
   align-items: center;
   gap: 9px;
   color: #d9fbe9;
-  font-size: 21px;
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 .reference-mark {
   position: relative;
-  width: 52px;
-  height: 32px;
+  width: 38px;
+  height: 26px;
   background: url('/icon.png') center / contain no-repeat;
 }
 .reference-mark::before,
@@ -277,7 +279,10 @@ body {
   border-radius: 7px;
   background: #111630;
   color: #d8ffea;
-  padding: 10px 14px;
+  padding: 6px 9px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
   outline: none;
 }
 .reference-key::placeholder {
@@ -290,8 +295,8 @@ body {
 .reference-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
+  gap: 8px;
+  padding: 6px 0;
   border-bottom: 1px solid rgba(210, 255, 232, 0.1);
 }
 .reference-icon {
@@ -307,8 +312,9 @@ body {
 }
 .reference-title {
   flex: 1;
+  min-width: 0;
   color: #f6f8ff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 .reference-chevron {
@@ -317,6 +323,7 @@ body {
 }
 .reference-switch {
   appearance: none;
+  flex-shrink: 0;
   width: 33px;
   height: 19px;
   margin: 0;
@@ -347,10 +354,10 @@ body {
 /* Home has six controls; keep the native extension popup below Chrome's
    practical height limit so it sizes to its content instead of scrolling. */
 .home-panel {
-  padding: 14px 18px 12px;
+  padding: 12px 14px 10px;
 }
 .home-panel .home-summary {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .home-panel .reference-stat {
   line-height: 20px;
@@ -362,10 +369,7 @@ body {
   padding: 8px !important;
 }
 .home-panel .home-account p:last-child {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 .home-panel .reference-row {
   padding: 6px 0;
@@ -376,6 +380,44 @@ body {
   font-size: 11px;
 }
 .home-panel .home-actions {
-  margin-top: 12px;
-  gap: 8px;
+  margin-top: 10px;
+  gap: 6px;
+}
+
+.reference-popup .ai-button {
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: normal;
+  line-height: 1.25;
+}
+.reference-popup .eyebrow {
+  font-size: 9px;
+  letter-spacing: 0;
+}
+.inline-settings-panel form {
+  margin-top: 10px;
+}
+.inline-settings-panel .reference-key.mt-2 {
+  margin-top: 6px;
+}
+.inline-settings-panel .reference-row .reference-key {
+  width: 58px !important;
+  padding: 4px 6px;
+}
+.inline-settings-panel p.leading-5 {
+  font-size: 10px;
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+.inline-settings-panel .reference-rule {
+  margin: 8px 0;
+}
+.inline-settings-panel .ai-button.mt-4 {
+  margin-top: 10px;
+}
+.backup-actions > * {
+  min-width: 0;
 }

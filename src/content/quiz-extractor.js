@@ -2,8 +2,9 @@ import { QUIZ_DUMP_KEY } from '../shared/constants.js';
 import { settingsStore } from '../shared/settings-store.js';
 import { clickWithDelay } from '../shared/delays.js';
 import { clearQuizDump, downloadQuizDump, readQuizDump } from '../shared/quiz-export.js';
+import { recordLessonFailure } from '../shared/run-log.js';
 
-const HELPER_ID = 'coursepilot-quiz-extractor';
+const HELPER_ID = 'vernal-quiz-extractor';
 const RESCAN_DEBOUNCE_MS = 400;
 
 const clean = (value) => (value || '').replace(/\s+/g, ' ').trim();
@@ -84,6 +85,10 @@ function readOptions(node) {
   ].map((input) => ({
     value: input.value || '',
     label: readOptionText(input),
+    displayLabel: clean(
+      (input.closest('.option, .r0, .answer > div') || input.parentElement)
+        ?.querySelector('.answernumber')?.textContent,
+    ),
     selected: input.checked,
     
   }));
@@ -188,16 +193,16 @@ async function mergeIntoDump(meta, questions) {
 }
 
 async function render(helper, dump, note) {
-  helper.querySelector('#coursepilot-quiz-count').textContent =
+  helper.querySelector('#vernal-quiz-count').textContent =
     dump?.questions?.length
       ? `Đã trích xuất ${dump.questions.length} câu hỏi.`
       : 'Chưa có câu hỏi.';
 
-  helper.querySelector('#coursepilot-quiz-note').textContent =
+  helper.querySelector('#vernal-quiz-note').textContent =
     note || '';
 
   const download = helper.querySelector(
-    '#coursepilot-quiz-download'
+    '#vernal-quiz-download'
   );
 
   if (download) {
@@ -210,7 +215,7 @@ async function render(helper, dump, note) {
 function mountPanel() {
   const helper = document.createElement('aside');
   helper.id = HELPER_ID;
-  helper.innerHTML = `<style>#${HELPER_ID}{position:fixed;z-index:2147483647;right:24px;bottom:24px;width:320px;max-height:78vh;display:flex;flex-direction:column;padding:16px;border:1px solid #8be8ba66;border-radius:16px;background:#111a38;color:#effff6;box-shadow:0 16px 44px #020714b8;font:13px system-ui,sans-serif}#${HELPER_ID} h3{margin:0 0 8px;font-size:15px}#${HELPER_ID} p{margin:0;color:#b6c9c0;line-height:1.5}#${HELPER_ID} button{margin-top:10px;width:100%;padding:9px;border:0;border-radius:9px;background:#55cf91;color:#062216;font-weight:800;cursor:pointer}#${HELPER_ID} button[disabled]{opacity:.45;cursor:not-allowed}#${HELPER_ID} small{display:block;margin-top:9px;color:#90a9a0}#${HELPER_ID} .cpq-list{display:none;margin-top:10px;overflow-y:auto;border-top:1px solid #8be8ba33}#${HELPER_ID} .cpq-list.is-open{display:block}#${HELPER_ID} .cpq-item{padding:9px 0;border-bottom:1px solid #8be8ba22}#${HELPER_ID} .cpq-item button{margin-top:6px;padding:6px;font-size:12px}#${HELPER_ID} .cpq-stem{color:#effff6;font-weight:600}#${HELPER_ID} .cpq-result{margin-top:6px;padding:7px;border-left:3px solid #55cf91;background:#55cf9114;border-radius:0 6px 6px 0;color:#c9f5dc}#${HELPER_ID} .cpq-result.is-error{border-left-color:#e07b7b;background:#e07b7b14;color:#ffd4d4}#${HELPER_ID} .cpq-diag{margin:10px 0 0;padding:6px 8px;border-radius:8px;background:#ffd24a1f;color:#ffe08a;font:600 11px/1.45 ui-monospace,Consolas,monospace;word-break:break-word}.coursepilot-quiz-highlight{outline:4px solid #ffd24a!important;outline-offset:3px;box-shadow:0 0 0 6px #ffd24a55,0 0 26px 6px #ffd24a99!important;animation:coursepilot-quiz-pulse 1s ease-in-out 3}@keyframes coursepilot-quiz-pulse{0%,100%{outline-color:#ffd24a}50%{outline-color:#ff7b4a}}</style><h3>Trích xuất câu hỏi</h3><p id="coursepilot-quiz-count">Chưa có câu hỏi.</p><p>Bạn tự chọn đáp án. Gợi ý AI chỉ hiện trong panel — extension không bấm chọn, không nộp bài.</p><p class="cpq-diag" id="coursepilot-quiz-diag"></p><button id="coursepilot-quiz-start" hidden>Đưa tôi đến nút Bắt đầu</button><button id="coursepilot-quiz-rescan" hidden>Quét lại trang này</button><button id="coursepilot-quiz-askall" hidden>Xem gợi ý AI</button><button id="coursepilot-quiz-download">Xuất JSON</button><button id="coursepilot-quiz-clear">Xoá dữ liệu</button><div class="cpq-list" id="coursepilot-quiz-list"></div><small id="coursepilot-quiz-note"></small>`;
+  helper.innerHTML = `<style>#${HELPER_ID}{position:fixed;z-index:2147483647;right:24px;bottom:24px;width:320px;max-height:78vh;display:flex;flex-direction:column;padding:16px;border:1px solid #8be8ba66;border-radius:16px;background:#111a38;color:#effff6;box-shadow:0 16px 44px #020714b8;font:13px system-ui,sans-serif}#${HELPER_ID} h3{margin:0 0 8px;font-size:15px}#${HELPER_ID} p{margin:0;color:#b6c9c0;line-height:1.5}#${HELPER_ID} button{margin-top:10px;width:100%;padding:9px;border:0;border-radius:9px;background:#55cf91;color:#062216;font-weight:800;cursor:pointer}#${HELPER_ID} button[disabled]{opacity:.45;cursor:not-allowed}#${HELPER_ID} small{display:block;margin-top:9px;color:#90a9a0}#${HELPER_ID} .cpq-list{display:none;margin-top:10px;overflow-y:auto;border-top:1px solid #8be8ba33}#${HELPER_ID} .cpq-list.is-open{display:block}#${HELPER_ID} .cpq-item{padding:9px 0;border-bottom:1px solid #8be8ba22}#${HELPER_ID} .cpq-item button{margin-top:6px;padding:6px;font-size:12px}#${HELPER_ID} .cpq-stem{color:#effff6;font-weight:600}#${HELPER_ID} .cpq-result{margin-top:6px;padding:7px;border-left:3px solid #55cf91;background:#55cf9114;border-radius:0 6px 6px 0;color:#c9f5dc}#${HELPER_ID} .cpq-result.is-error{border-left-color:#e07b7b;background:#e07b7b14;color:#ffd4d4}#${HELPER_ID} .cpq-diag{margin:10px 0 0;padding:6px 8px;border-radius:8px;background:#ffd24a1f;color:#ffe08a;font:600 11px/1.45 ui-monospace,Consolas,monospace;word-break:break-word}.vernal-quiz-highlight{outline:4px solid #ffd24a!important;outline-offset:3px;box-shadow:0 0 0 6px #ffd24a55,0 0 26px 6px #ffd24a99!important;animation:vernal-quiz-pulse 1s ease-in-out 3}@keyframes vernal-quiz-pulse{0%,100%{outline-color:#ffd24a}50%{outline-color:#ff7b4a}}</style><h3>Trích xuất câu hỏi</h3><p id="vernal-quiz-count">Chưa có câu hỏi.</p><p>Bạn tự chọn đáp án. Gợi ý AI chỉ hiện trong panel — extension không bấm chọn, không nộp bài.</p><p class="cpq-diag" id="vernal-quiz-diag"></p><button id="vernal-quiz-start" hidden>Đưa tôi đến nút Bắt đầu</button><button id="vernal-quiz-rescan" hidden>Quét lại trang này</button><button id="vernal-quiz-askall" hidden>Xem gợi ý AI</button><button id="vernal-quiz-download">Xuất JSON</button><button id="vernal-quiz-clear">Xoá dữ liệu</button><div class="cpq-list" id="vernal-quiz-list"></div><small id="vernal-quiz-note"></small>`;
   const theme = document.createElement('style');
   theme.textContent = `#${HELPER_ID}{border-color:#b2ffda42!important;border-radius:0!important;background:linear-gradient(160deg,#182448 0%,#10152f 56%,#0b1025 100%)!important;box-shadow:0 12px 30px #00000061,inset 0 1px #ffffff14!important}#${HELPER_ID} button,#${HELPER_ID} .cpq-result,#${HELPER_ID} .cpq-diag{border-radius:0!important}`;
   helper.append(theme);
@@ -234,6 +239,8 @@ async function requestSuggestionWithRetry(question, maxRetries = 3) {
 
         payload: {
           stem: question.stem,
+          type: question.type,
+          quizName: readQuizMeta().quizName,
           options: question.options,
           assets: question.assets,
         },
@@ -301,6 +308,9 @@ async function askSuggestion(item, question, button, result) {
     // =========================
 
     if (!answer?.value) {
+      await recordLessonFailure(answer?.why || 'Quiz: no answer determined', {
+        stage: 'quiz-answer', question: question.stem, questionKey: question.name,
+      });
       result.textContent =
         `Không chốt được đáp án. ${answer?.why || ''}`.trim();
 
@@ -328,6 +338,9 @@ async function askSuggestion(item, question, button, result) {
     // =========================
 
     if (!clicked) {
+      await recordLessonFailure('Quiz: could not select the answer', {
+        stage: 'quiz-answer', question: question.stem, questionKey: question.name,
+      });
       console.warn(
         'AI có đáp án nhưng không click được:',
         answer
@@ -361,6 +374,9 @@ async function askSuggestion(item, question, button, result) {
     // =========================
     // Gọi AI/API bị lỗi
     // =========================
+    await recordLessonFailure(error.message || String(error), {
+      stage: 'quiz-answer', question: question.stem, questionKey: question.name,
+    });
 
     result.className = 'cpq-result is-error';
 
@@ -387,8 +403,8 @@ async function askSuggestion(item, question, button, result) {
 }
 
 async function renderQuestionList(helper, dump) {
-  const list = helper.querySelector('#coursepilot-quiz-list');
-  const toggle = helper.querySelector('#coursepilot-quiz-askall');
+  const list = helper.querySelector('#vernal-quiz-list');
+  const toggle = helper.querySelector('#vernal-quiz-askall');
 
   toggle.hidden = !dump?.questions?.length;
 
@@ -709,6 +725,122 @@ function findSubmitAllButton() {
   }) || null;
 }
 
+function findFinalConfirmButton() {
+  // Chỉ tìm modal/dialog đang hiển thị.
+  const dialogs = [
+    ...document.querySelectorAll(
+      '.modal.show, [role="dialog"], .modal[aria-modal="true"]'
+    ),
+  ];
+
+  for (const dialog of dialogs) {
+    // Bỏ qua dialog đang ẩn.
+    const style = window.getComputedStyle(dialog);
+
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden'
+    ) {
+      continue;
+    }
+
+    const dialogText = clean(
+      dialog.textContent || ''
+    ).toLowerCase();
+
+    // Đảm bảo đây đúng là modal xác nhận nộp bài.
+    const looksLikeSubmitConfirm =
+      dialogText.includes(
+        'submit all your answers and finish'
+      ) ||
+      dialogText.includes(
+        'một khi nộp bài'
+      );
+
+    if (!looksLikeSubmitConfirm) {
+      continue;
+    }
+
+    const buttons = [
+      ...dialog.querySelectorAll(
+        'button, input[type="button"], input[type="submit"], a'
+      ),
+    ];
+
+    const confirmButton = buttons.find((element) => {
+      const text = clean(
+        element.textContent ||
+        element.value ||
+        ''
+      ).toLowerCase();
+
+      return (
+        text === 'nộp bài và kết thúc' ||
+        text === 'submit all and finish'
+      );
+    });
+
+    if (confirmButton) {
+      return confirmButton;
+    }
+  }
+
+  return null;
+}
+
+const confirmedStartButtons = new WeakSet();
+let startConfirmationPending = false;
+
+function findQuizStartConfirmationButton() {
+  const dialogs = document.querySelectorAll(
+    '.modal, [role="dialog"], .moodle-dialogue',
+  );
+  for (const dialog of dialogs) {
+    const style = window.getComputedStyle(dialog);
+    if (dialog.hidden || dialog.getAttribute('aria-hidden') === 'true' ||
+      style.display === 'none' || style.visibility === 'hidden' ||
+      !dialog.getClientRects().length) continue;
+
+    const text = clean(dialog.textContent).toLowerCase();
+    if (!dialog.querySelector('form#mod_quiz_preflight_form, form[action*="startattempt.php"]') &&
+      !/bắt đầu làm bài|start attempt|start quiz|giới hạn thời gian|time limit/.test(text)) continue;
+
+    const button = [...dialog.querySelectorAll('button, input[type="submit"], input[type="button"]')]
+      .find(element => {
+        const label = clean(element.textContent || element.value).toLowerCase();
+        return /^(bắt đầu làm bài|bắt đầu bài làm|start attempt|start quiz)$/.test(label) &&
+          !element.disabled && element.getAttribute('aria-disabled') !== 'true' &&
+          element.getClientRects().length;
+      });
+    if (button) return button;
+  }
+  return null;
+}
+
+async function confirmQuizStartIfNeeded() {
+  // Preflight belongs to the entry page, never the attempt/summary/review flow.
+  if (location.pathname !== '/mod/quiz/view.php' || startConfirmationPending) return false;
+  const settings = await settingsStore.get();
+  if (settings.extensionEnabled === false || !settings.quizExportEnabled || !settings.autoStartQuiz ||
+    (settings.allowedDomains.length && !settings.allowedDomains.includes(location.hostname))) return false;
+  const button = findQuizStartConfirmationButton();
+  if (!button || confirmedStartButtons.has(button) || startConfirmationPending) return false;
+
+  startConfirmationPending = true;
+  confirmedStartButtons.add(button);
+  try {
+    const clicked = await clickWithDelay(button);
+    if (!clicked) confirmedStartButtons.delete(button);
+    return clicked;
+  } catch (error) {
+    confirmedStartButtons.delete(button);
+    await recordLessonFailure(error.message || String(error), { stage: 'quiz-start' });
+    return false;
+  } finally {
+    startConfirmationPending = false;
+  }
+}
+
 function isQuizSummaryPage() {
   const bodyText = clean(
     document.body?.textContent
@@ -774,7 +906,7 @@ function findQuestionNode(question) {
 }
 
 function updateAiStatus(helper, text) {
-  const diagEl = helper?.querySelector('#coursepilot-quiz-diag');
+  const diagEl = helper?.querySelector('#vernal-quiz-diag');
 
   if (!diagEl) return;
 
@@ -841,7 +973,44 @@ let startClicked = false;
 const autoAnsweredQuestions = new Map();
 
 function getAttemptStateKey(attemptId) {
-  return `coursepilot_quiz_state_${attemptId || 'unknown'}`;
+  return `vernal_quiz_state_${attemptId || 'unknown'}`;
+}
+
+function clearAttemptState(attemptId) {
+  if (!attemptId) return;
+
+  try {
+    sessionStorage.removeItem(getAttemptStateKey(attemptId));
+  } catch (error) {
+    console.warn('Cannot clear quiz attempt state:', error);
+  }
+
+  if (currentAttemptId === attemptId) {
+    autoAnsweredQuestions.clear();
+    currentAttemptId = null;
+  }
+}
+
+function isQuizReviewPage() {
+  return location.pathname.endsWith('/mod/quiz/review.php');
+}
+
+function clearCompletedAttemptStates() {
+  if (isQuizReviewPage()) {
+    clearAttemptState(readQuizMeta().attemptId);
+    return;
+  }
+
+  if (!location.pathname.endsWith('/mod/quiz/view.php')) return;
+
+  // Review links in the attempt history identify submitted attempts exactly.
+  for (const link of document.querySelectorAll('.quizattemptsummary a[href]')) {
+    const url = new URL(link.href, location.href);
+    if (url.origin !== location.origin || !url.pathname.endsWith('/mod/quiz/review.php')) {
+      continue;
+    }
+    clearAttemptState(Number(url.searchParams.get('attempt')) || null);
+  }
 }
 
 function readAttemptState(attemptId) {
@@ -853,6 +1022,8 @@ function readAttemptState(attemptId) {
     if (!raw) {
       return {
         finishClicked: false,
+        submitClicked: false,
+        confirmClicked: false,
         answeredQuestions: {},
       };
     }
@@ -862,6 +1033,7 @@ function readAttemptState(attemptId) {
     return {
       finishClicked: Boolean(parsed.finishClicked),
       submitClicked: Boolean(parsed.submitClicked),
+      confirmClicked: Boolean(parsed.confirmClicked),
 
       answeredQuestions:
         parsed.answeredQuestions &&
@@ -869,6 +1041,7 @@ function readAttemptState(attemptId) {
           ? parsed.answeredQuestions
           : {},
     };
+
   } catch (error) {
     console.warn(
       'Không đọc được trạng thái attempt:',
@@ -878,6 +1051,7 @@ function readAttemptState(attemptId) {
     return {
       finishClicked: false,
       submitClicked: false,
+      confirmClicked: false,
       answeredQuestions: {},
     };
   }
@@ -931,6 +1105,22 @@ function wasSubmitClicked(attemptId) {
   return readAttemptState(attemptId).submitClicked;
 }
 
+function markConfirmClicked(attemptId) {
+  if (!attemptId) return;
+
+  const state = readAttemptState(attemptId);
+
+  state.confirmClicked = true;
+
+  saveAttemptState(attemptId, state);
+}
+
+function wasConfirmClicked(attemptId) {
+  if (!attemptId) return false;
+
+  return readAttemptState(attemptId).confirmClicked;
+}
+
 function saveAnsweredQuestion(
   attemptId,
   questionKey,
@@ -967,6 +1157,8 @@ function restoreAnsweredQuestions(attemptId) {
 
 export function mountQuizExtractor(provider) {
   if (!provider.isQuizPage?.(location)) return;
+  clearCompletedAttemptStates();
+  if (isQuizReviewPage()) return;
   let observer;
   let timer;
   let helper;
@@ -993,8 +1185,8 @@ export function mountQuizExtractor(provider) {
         ? null
         : provider.findQuizStartButton?.(document);
 
-    const startEl = helper.querySelector('#coursepilot-quiz-start');
-    const diagEl = helper.querySelector('#coursepilot-quiz-diag');
+    const startEl = helper.querySelector('#vernal-quiz-start');
+    const diagEl = helper.querySelector('#vernal-quiz-diag');
     startEl.hidden = !startButton;
 
     console.log(`Value: ${startClicked}`)
@@ -1047,23 +1239,23 @@ export function mountQuizExtractor(provider) {
     if (startButton) {
       startEl.onclick = () => {
         startButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        startButton.classList.add('coursepilot-quiz-highlight');
+        startButton.classList.add('vernal-quiz-highlight');
       };
     }
 
-    const rescanEl = helper.querySelector('#coursepilot-quiz-rescan');
+    const rescanEl = helper.querySelector('#vernal-quiz-rescan');
     rescanEl.hidden = !isAttempt;
     rescanEl.onclick = () => rescan(true);
-    helper.querySelector('#coursepilot-quiz-askall').onclick = () =>
-      helper.querySelector('#coursepilot-quiz-list').classList.toggle('is-open');
-    helper.querySelector('#coursepilot-quiz-download').onclick = () => {
+    helper.querySelector('#vernal-quiz-askall').onclick = () =>
+      helper.querySelector('#vernal-quiz-list').classList.toggle('is-open');
+    helper.querySelector('#vernal-quiz-download').onclick = () => {
       readQuizDump().then((dump) => downloadQuizDump(dump));
     };
 
-    helper.querySelector('#coursepilot-quiz-clear').onclick = async () => {
+    helper.querySelector('#vernal-quiz-clear').onclick = async () => {
       await clearQuizDump();
 
-      autoAnsweredQuestions.clear();autoAnsweredQuestions.clear();
+      autoAnsweredQuestions.clear();
 
       if (currentAttemptId !== null) {
         sessionStorage.removeItem(
@@ -1085,13 +1277,16 @@ export function mountQuizExtractor(provider) {
       clearTimeout(timer);
       timer = setTimeout(() => rescan(), RESCAN_DEBOUNCE_MS);
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'disabled', 'aria-disabled'],
+    });
 
     await rescan();
-  });
+  }).catch(error => recordLessonFailure(error.message || String(error), {stage: 'quiz'}));
 
   function updateQuizDiag(helper, text) {
-    const diagEl = helper?.querySelector('#coursepilot-quiz-diag');
+    const diagEl = helper?.querySelector('#vernal-quiz-diag');
 
     if (!diagEl) return;
 
@@ -1099,7 +1294,7 @@ export function mountQuizExtractor(provider) {
   }
 
   function updateAiStatus(helper, text) {
-    const diagEl = helper?.querySelector('#coursepilot-quiz-diag');
+    const diagEl = helper?.querySelector('#vernal-quiz-diag');
 
     if (!diagEl) return;
 
@@ -1116,9 +1311,104 @@ export function mountQuizExtractor(provider) {
 
   async function rescan(manual = false) {
     if (!helper) return;
+    clearCompletedAttemptStates();
+    if (isQuizReviewPage()) return;
+
+    if (await confirmQuizStartIfNeeded()) return;
 
     // =========================================
-    // TRANG SUMMARY / XÁC NHẬN SAU KHI HOÀN THÀNH
+    // 0. MODAL XÁC NHẬN NỘP BÀI CUỐI
+    //
+    // PHẢI kiểm tra trước Summary.
+    // Vì khi modal mở, trang phía sau vẫn là Summary.
+    // =========================================
+    const finalConfirmButton =
+      findFinalConfirmButton();
+
+    if (finalConfirmButton) {
+      console.log(
+        'Phát hiện modal xác nhận nộp bài:',
+        finalConfirmButton
+      );
+
+      const meta = readQuizMeta();
+
+      // Chặn click lặp do MutationObserver gọi rescan nhiều lần.
+      if (
+        meta.attemptId !== null &&
+        wasConfirmClicked(meta.attemptId)
+      ) {
+        console.log(
+          'Attempt này đã xác nhận nộp bài trước đó, bỏ qua.'
+        );
+
+        updateAiStatus(
+          helper,
+          'Đã xác nhận nộp bài trước đó'
+        );
+
+        return;
+      }
+
+      // Quan trọng: lưu trạng thái TRƯỚC khi click.
+      if (meta.attemptId !== null) {
+        markConfirmClicked(meta.attemptId);
+      }
+
+      updateAiStatus(
+        helper,
+        'Đang xác nhận nộp bài cuối cùng...'
+      );
+
+      console.log(
+        'Đang bấm nút xác nhận cuối:',
+        finalConfirmButton
+      );
+
+      const clicked =
+        await clickWithDelay(finalConfirmButton);
+
+      if (!clicked) {
+        console.warn(
+          'Nút xác nhận đã rời DOM trước khi click.'
+        );
+        await recordLessonFailure('Quiz: final submission confirmation could not be clicked', {stage: 'quiz-submit'});
+
+        // Nếu click thật sự thất bại thì cho phép retry.
+        if (meta.attemptId !== null) {
+          const state =
+            readAttemptState(meta.attemptId);
+
+          state.confirmClicked = false;
+
+          saveAttemptState(
+            meta.attemptId,
+            state
+          );
+        }
+
+        updateAiStatus(
+          helper,
+          'Click xác nhận cuối thất bại · sẽ thử lại'
+        );
+
+        return;
+      }
+
+      console.log(
+        'Đã click xác nhận Nộp bài và kết thúc.'
+      );
+
+      updateAiStatus(
+        helper,
+        'Đã xác nhận nộp bài'
+      );
+
+      return;
+    }
+
+    // =========================================
+    // 1. TRANG SUMMARY
     // =========================================
     if (isQuizSummaryPage()) {
       console.log(
@@ -1184,13 +1474,41 @@ export function mountQuizExtractor(provider) {
         'Đang bấm Nộp bài và kết thúc...'
       );
 
-      await clickWithDelay(submitAllButton);
+    const clicked = await clickWithDelay(submitAllButton);
 
-      console.log(
-        'Đã bấm Nộp bài và kết thúc.'
+    if (!clicked) {
+      console.warn(
+        'Click Nộp bài và kết thúc thất bại.'
       );
+      await recordLessonFailure('Quiz: submit button could not be clicked', {stage: 'quiz-submit'});
+
+      if (meta.attemptId !== null) {
+        const state =
+          readAttemptState(meta.attemptId);
+
+        state.submitClicked = false;
+
+        saveAttemptState(
+          meta.attemptId,
+          state
+        );
+      }
 
       return;
+    }
+
+    console.log(
+      'Đã bấm Nộp bài và kết thúc.'
+    );
+
+    // Modal thường được tạo bằng JS sau click.
+    // MutationObserver sẽ bắt nó.
+    // Gọi thêm rescan sau một khoảng ngắn để dự phòng.
+    setTimeout(() => {
+      rescan();
+    }, 600);
+
+    return;
     }
 
     const { questions, deferredFrames } =

@@ -38,9 +38,10 @@ export function nextLessonDelayMs(value) {
 
 // Chờ đúng nhịp đã cấu hình, dùng cho thao tác không đi qua click (ví dụ nộp form
 // đăng nhập) để nhịp giữa các thao tác là đồng nhất.
-export async function waitClickDelay() {
+export async function waitClickDelay(waitedMs = 0) {
   const { clickDelaySeconds } = await settingsStore.get();
-  await new Promise((resolve) => setTimeout(resolve, clickDelayMs(clickDelaySeconds)));
+  const remainingMs = Math.max(0, clickDelayMs(clickDelaySeconds) - waitedMs);
+  if (remainingMs > 0) await new Promise((resolve) => setTimeout(resolve, remainingMs));
 }
 
 // Bấm sau khi chờ đúng nhịp đã cấu hình.

@@ -1,4 +1,4 @@
-const PANEL_ID = 'coursepilot-course-status';
+const PANEL_ID = 'vernal-course-status';
 
 function escapeHtml(value) {
   return value.replace(

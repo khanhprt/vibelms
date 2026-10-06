@@ -1,4 +1,10 @@
-# CoursePilot
+# Vernal
+
+Nhật ký phiên học được lưu trong extension qua các lần chuyển trang. Khi chạy hết
+hoặc tắt chương trình, extension xuất file `.log` vào `Downloads/Vernal/logs/`.
+File ghi link hoạt động gặp lỗi, thời gian, bước xử lý và lý do để kiểm tra/học lại.
+Trong popup, chọn "Tải log phiên học" để xuất lại phiên gần nhất, kể cả phiên bị gián đoạn.
+Sau khi cập nhật extension, reload để nhận quyền `downloads` mới.
 
 Chrome extension viết bằng **WXT + JavaScript (ESM)** để hỗ trợ luồng học online có sự kiểm soát của người dùng: phát video, chuyển bài khi video kết thúc và tạo **bản nháp** thảo luận qua LLM gateway.
 

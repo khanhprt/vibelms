@@ -14,7 +14,7 @@ export const MESSAGE = Object.freeze({
 export const QUIZ_PATHS = Object.freeze(['/mod/quiz/']);
 // Bộ đệm câu hỏi nằm trong storage.local (theo extension, không theo tab) để sống sót qua
 // các lần chuyển trang của Moodle. Popup/options đọc và xuất từ khoá này.
-export const QUIZ_DUMP_KEY = 'coursepilotQuizDump';
+export const QUIZ_DUMP_KEY = 'vernalQuizDump';
 
 export const DEFAULT_SETTINGS = Object.freeze({
   assistEnabled: false,
