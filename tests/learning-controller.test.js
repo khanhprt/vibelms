@@ -11,7 +11,7 @@ async function settle() {
   for (let i = 0; i < 40; i++) await Promise.resolve();
 }
 
-async function setup(path, overrides = {}, {storage = new Map(), providerOverrides = {}, docOverrides = {}, logFailure = false, logHangs = false, realResume = false} = {}) {
+async function setup(path, overrides = {}, {storage = new Map(), providerOverrides = {}, docOverrides = {}, logFailure = false, logHangs = false, realResume = false, initiallyComplete = false} = {}) {
   const settings = {
     extensionEnabled: true, allowedDomains: [], autoResumeCourse: true,
     autoPlayVideo: false, autoNextLesson: false, nextLessonDelaySeconds: 5,
@@ -49,7 +49,8 @@ async function setup(path, overrides = {}, {storage = new Map(), providerOverrid
     clearTimeout: key => timers.delete(key), setInterval: () => ++id, clearInterval: () => {},
     nextLessonDelayMs: seconds => seconds * 1000, waitClickDelay: waitedMs => delay(waitedMs),
     syncCourseStatusPanel: () => {}, autoBindLocalAccount: async () => {},
-    markAutoResumeAfterLogin: () => calls.mark++, rememberCurrentActivity: () => {}, resumeLowestProgressCourse: options => {
+    markAutoResumeAfterLogin: () => calls.mark++, rememberCurrentActivity: () => {},
+    wasQuizOrForumInitiallyCompleted: () => initiallyComplete, resumeLowestProgressCourse: options => {
       calls.resumeOptions.push(options);
       calls.resume++;
     },
@@ -85,6 +86,44 @@ test('resume keeps video, forum and quiz on the current activity without remount
     assert.equal(env.calls.quiz, 1);
     env.controller.destroy();
   }
+});
+
+test('baseline-complete quiz is skipped without mounting its helper', async () => {
+  const env = await setup('/mod/quiz/view.php?id=1', {}, { initiallyComplete: true });
+  await settle();
+  assert.equal(env.calls.quiz, 0);
+  assert.equal(env.calls.forum, 0);
+  assert.equal(env.calls.next, 1);
+  env.controller.destroy();
+});
+
+test('a buttonless page reached after Next is treated as the end of its course', async () => {
+  const storage = new Map([['vernal:activity-navigation-pending', JSON.stringify({
+    source: 'https://lms.pttc1.edu.vn/mod/page/view.php?id=1', startedAt: 1,
+  })]]);
+  const env = await setup('/mod/forum/view.php?id=2', {}, {
+    storage,
+    providerOverrides: { findNextButton: () => null },
+  });
+  await settle();
+  assert.equal(env.calls.verify, 1);
+  assert.equal(env.calls.forum, 0);
+  assert.equal(storage.has('vernal:activity-navigation-pending'), false);
+  env.controller.destroy();
+});
+
+test('a buttonless course page reached after Next is also treated as course completion', async () => {
+  const storage = new Map([['vernal:activity-navigation-pending', JSON.stringify({
+    source: 'https://lms.pttc1.edu.vn/mod/page/view.php?id=1', startedAt: 1,
+  })]]);
+  const env = await setup('/course/view.php?id=2', {}, {
+    storage,
+    providerOverrides: { findNextButton: () => null },
+  });
+  await settle();
+  assert.equal(env.calls.verify, 1);
+  assert.equal(storage.has('vernal:activity-navigation-pending'), false);
+  env.controller.destroy();
 });
 
 test('initial controller startup and power-on seed course selection on an open dashboard', async () => {
@@ -384,8 +423,8 @@ test('last activity returns to courses without waiting for a manual completion m
   env.controller.destroy();
 });
 
-test('assignment, folder and other module pages advance after the configured delay', async () => {
-  for (const module of ['assign', 'folder', 'resource', 'page', 'url', 'book']) {
+test('folder and other passive module pages advance after the configured delay', async () => {
+  for (const module of ['folder', 'resource', 'page', 'url', 'book']) {
     for (const seconds of [3, 5]) {
       const env = await setup(`/mod/${module}/view.php?id=1&forceview=1`, {
         autoNextLesson: true, nextLessonDelaySeconds: seconds,
@@ -399,6 +438,15 @@ test('assignment, folder and other module pages advance after the configured del
       env.controller.destroy();
     }
   }
+});
+
+test('assignment follows the sequential course flow', async () => {
+  const env = await setup('/mod/assign/view.php?id=1&forceview=1', {
+    autoNextLesson: true, nextLessonDelaySeconds: 3,
+  });
+  const timer = [...env.timers.values()].find(item => item.ms === 3000);
+  assert.ok(timer);
+  env.controller.destroy();
 });
 
 test('folder follows Phan Tiep Theo outside the standard navigation wrapper after 3 seconds', async () => {

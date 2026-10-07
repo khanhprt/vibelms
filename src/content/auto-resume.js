@@ -6,9 +6,9 @@ const COURSES_PATH = '/my/courses.php';
 const COURSE_CHECK_KEY = 'vernal:auto-resume-course-check';
 const CURRENT_COURSE_KEY = 'vernal:current-course-id';
 const LAST_ACTIVITY_KEY_PREFIX = 'vernal:last-activity:';
+const QUIZ_FORUM_SNAPSHOT_KEY = 'vernal:quiz-forum-completion-snapshot';
 let navigationTimer;
 let navigationTarget;
-let lastIncompleteActivitiesSignature;
 const navigateAfterDelay = (url) => {
   if (navigationTarget === url) return;
   clearTimeout(navigationTimer);
@@ -77,17 +77,6 @@ function isResumeableActivityUrl(url) {
     /^\/mod\/[^/]+\/(?:view|attempt|discuss)\.php$/.test(url.pathname);
 }
 
-function savedActivityUrl(courseId) {
-  try {
-    const stored = globalThis.localStorage?.getItem(`${LAST_ACTIVITY_KEY_PREFIX}${courseId}`);
-    const value = JSON.parse(stored || 'null');
-    const url = new URL(value?.url || '', location.href);
-    return isResumeableActivityUrl(url) ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
 // localStorage sống sót khi đóng tab/trình duyệt, khác với sessionStorage dùng cho flow
 // tạm thời. Chỉ lưu URL activity Moodle, không lưu nội dung học hay thông tin đăng nhập.
 export function rememberCurrentActivity() {
@@ -143,39 +132,54 @@ function firstCourseActivity() {
   )].find(isUsableActivityLink) || null;
 }
 
-// PTTC1/Moodle render trạng thái completion thật trong course index. data-value=0
-// nghĩa là activity chưa hoàn thành; các giá trị khác là trạng thái đã hoàn thành.
-function incompleteMoodleActivities() {
-  const activities = [];
+function snapshotQuizAndForumCompletion(courseId) {
+  const incompleteIds = [];
+  const incompleteActivities = [];
   let foundCompletionData = false;
   for (const item of document.querySelectorAll('[data-for="cm"]')) {
     if (typeof item.querySelector !== 'function') continue;
     const completion = item.querySelector('[data-for="cm_completion"]');
-    if (!completion) continue;
-    foundCompletionData = true;
-    if (completion.getAttribute('data-value') !== '0') continue;
     const link = item.querySelector('a[data-for="cm_name"][href*="/mod/"]');
-    if (!isUsableActivityLink(link)) continue;
-    activities.push({
-      cmid: item.getAttribute('data-id') || new URL(link.href, location.href).searchParams.get('id') || '?',
-      name: link.textContent?.replace(/\s+/g, ' ').trim() || 'Không rõ tên activity',
-      href: link.href,
-    });
+    if (!completion || !isUsableActivityLink(link)) continue;
+    const module = new URL(link.href, location.href).pathname.match(/^\/mod\/([^/]+)\//)?.[1];
+    if (module !== 'quiz' && module !== 'forum') continue;
+    foundCompletionData = true;
+    if (completion.getAttribute('data-value') === '0') {
+      const cmid = new URL(link.href, location.href).searchParams.get('id');
+      if (!cmid) continue;
+      incompleteIds.push(cmid);
+      incompleteActivities.push({
+        cmid,
+        module,
+        name: link.textContent?.replace(/\s+/g, ' ').trim() || 'Không rõ tên activity',
+      });
+    }
   }
-  return { foundCompletionData, activities };
+  const snapshot = { courseId, foundCompletionData, incompleteIds: incompleteIds.filter(Boolean) };
+  sessionStorage.setItem(QUIZ_FORUM_SNAPSHOT_KEY, JSON.stringify(snapshot));
+  logActivity(
+    'info',
+    `Đã chụp trạng thái Moodle: ${snapshot.incompleteIds.length} quiz/forum chưa hoàn thành`,
+  );
+  for (const activity of incompleteActivities)
+    logActivity('info', 'Quiz/forum chưa hoàn thành lúc bắt đầu course',
+      `cmid ${activity.cmid} · ${activity.module} · ${activity.name}`);
 }
 
-function logIncompleteMoodleActivities(activities) {
-  const signature = activities.map(({ cmid, href }) => `${cmid}:${href}`).join('|');
-  if (signature === lastIncompleteActivitiesSignature) return;
-  lastIncompleteActivitiesSignature = signature;
-  if (!activities.length) {
-    logActivity('info', 'Moodle không báo activity nào chưa hoàn thành');
-    return;
-  }
-  logActivity('info', `Moodle báo ${activities.length} activity chưa hoàn thành`);
-  for (const activity of activities) {
-    logActivity('info', 'Activity Moodle chưa hoàn thành', `cmid ${activity.cmid} · ${activity.name}`);
+// Chỉ bỏ qua quiz/forum vốn đã hoàn thành lúc bắt đầu course. Activity không có
+// completion data luôn được học theo thứ tự để tránh bỏ sót.
+export function wasQuizOrForumInitiallyCompleted() {
+  try {
+    const url = new URL(location.href);
+    const module = url.pathname.match(/^\/mod\/([^/]+)\//)?.[1];
+    const cmid = url.searchParams.get('id');
+    const snapshot = JSON.parse(sessionStorage.getItem(QUIZ_FORUM_SNAPSHOT_KEY) || 'null');
+    const courseId = completedCourseId();
+    return (module === 'quiz' || module === 'forum') && Boolean(cmid) &&
+      snapshot?.foundCompletionData && snapshot.courseId === courseId &&
+      !snapshot.incompleteIds.includes(cmid);
+  } catch {
+    return false;
   }
 }
 
@@ -194,7 +198,6 @@ export function resumeLowestProgressCourse({ startIfIdle = false } = {}) {
     markAutoResumeAfterLogin();
     phase = 'courses';
   }
-  // Resume a previously queued verification using the new end-of-course policy.
   if (phase === 'verify-course') phase = 'return-courses';
   if (location.pathname.startsWith('/mod/') && phase !== 'return-courses') {
     stopAutoResume();
@@ -259,27 +262,14 @@ export function resumeLowestProgressCourse({ startIfIdle = false } = {}) {
 
   if ((phase === 'activity' || phase === 'video') && location.pathname === '/course/view.php') {
     const courseId = new URL(location.href).searchParams.get('id');
-    const savedUrl = courseId && savedActivityUrl(courseId);
-    const moodle = incompleteMoodleActivities();
-    if (moodle.foundCompletionData) logIncompleteMoodleActivities(moodle.activities);
-    const savedActivity = moodle.activities.find(({ href }) => href === savedUrl);
-    const target = savedActivity?.href || moodle.activities[0]?.href || (!moodle.foundCompletionData && savedUrl);
-    if (target) {
+    if (courseId) snapshotQuizAndForumCompletion(courseId);
+    const activity = firstCourseActivity();
+    if (activity?.href) {
       stopAutoResume();
-      const source = savedActivity
-        ? 'vị trí extension đã lưu và Moodle chưa hoàn thành'
-        : moodle.activities[0]
-          ? 'activity Moodle chưa hoàn thành đầu tiên'
-          : 'vị trí extension đã lưu';
-      logActivity('info', 'Đang học tiếp', `${source} · ${new URL(target).pathname}`);
-      navigateAfterDelay(target);
+      logActivity('info', 'Bắt đầu course theo thứ tự activity', new URL(activity.href).pathname);
+      navigateAfterDelay(activity.href);
       return true;
     }
-    const activity = firstCourseActivity();
-    if (!activity?.href) return false;
-    stopAutoResume();
-    navigateAfterDelay(activity.href);
-    return true;
   }
   return false;
 }

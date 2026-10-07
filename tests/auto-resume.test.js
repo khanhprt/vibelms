@@ -213,20 +213,6 @@ test('an already-open course section starts without a prior course-selection pha
   assert.equal(env.storage.get('vernal:current-course-id'), '21357');
 });
 
-test('an open course resumes the last Moodle activity saved for that course', () => {
-  const env = setup();
-  env.location.pathname = '/course/view.php';
-  env.location.href = `${origin}/course/view.php?id=21357`;
-  env.storage.set(phaseKey, 'activity');
-  const lastUrl = `${origin}/mod/videotime/view.php?id=100`;
-  env.localStorage.set('vernal:last-activity:21357', JSON.stringify({ url: lastUrl, savedAt: 1 }));
-
-  assert.equal(env.context.resumeLowestProgressCourse(), true);
-  env.runTimer();
-  assert.deepEqual(env.navigations, [lastUrl]);
-  assert.equal(env.storage.has(phaseKey), false);
-});
-
 test('a current Moodle activity is persisted by course and can survive a browser restart', () => {
   const env = setup();
   env.location.pathname = '/mod/resource/view.php';
@@ -239,7 +225,7 @@ test('a current Moodle activity is persisted by course and can survive a browser
   assert.equal(typeof saved.savedAt, 'number');
 });
 
-test('Moodle completion data chooses the first unfinished activity and logs every unfinished item', () => {
+test('course snapshots incomplete quiz/forum but still starts from the first activity', () => {
   const env = setup();
   env.location.pathname = '/course/view.php';
   env.location.href = `${origin}/course/view.php?id=21357`;
@@ -256,17 +242,16 @@ test('Moodle completion data chooses the first unfinished activity and logs ever
     };
   };
   const activities = [activity(1, 'Đã xong', true), activity(2, 'Quiz cần làm', false), activity(3, 'Quiz sau', false)];
-  env.doc.querySelectorAll = selector => selector === '[data-for="cm"]' ? activities : [];
+  const first = { href: `${origin}/mod/folder/view.php?id=10`, getAttribute: () => null };
+  env.doc.querySelectorAll = selector => selector === '[data-for="cm"]'
+    ? activities : selector.startsWith('li.activity') ? [{ querySelector: () => first }] : [];
 
   assert.equal(env.context.resumeLowestProgressCourse(), true);
   env.runTimer();
-  assert.deepEqual(env.navigations, [`${origin}/mod/quiz/view.php?id=2`]);
-  assert.deepEqual(env.logs.slice(0, 4), [
-    ['info', 'Moodle báo 2 activity chưa hoàn thành'],
-    ['info', 'Activity Moodle chưa hoàn thành', 'cmid 2 · Quiz cần làm'],
-    ['info', 'Activity Moodle chưa hoàn thành', 'cmid 3 · Quiz sau'],
-    ['info', 'Đang học tiếp', 'activity Moodle chưa hoàn thành đầu tiên · /mod/quiz/view.php'],
-  ]);
+  assert.deepEqual(env.navigations, [first.href]);
+  assert.deepEqual(JSON.parse(env.storage.get('vernal:quiz-forum-completion-snapshot')), {
+    courseId: '21357', foundCompletionData: true, incompleteIds: ['2', '3'],
+  });
 });
 
 test('course section startup waits for asynchronously loaded activities and preserves their order', () => {

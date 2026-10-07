@@ -73,6 +73,16 @@ test('regular discussion forums with Add topic still require a task', () => {
   assert.equal(env.adds(), 1);
 });
 
+test('a running marker left by an unloaded forum page is cleared before retrying', async () => {
+  const storage = new Map([['vernal_forum_auto_create_42', 'running']]);
+  const env = setup('/mod/forum/view.php?id=42', 'Thảo luận nhóm', { storage });
+  env.context.document.querySelector = selector => selector.startsWith('a[data-toggle')
+    ? { disabled: true, getAttribute: () => null }
+    : null;
+  assert.equal(await env.context.autoCreateForumDiscussion(), false);
+  assert.equal(storage.has('vernal_forum_auto_create_42'), false);
+});
+
 test('an announcement title appearing while the form loads prevents the LLM request and submission', async () => {
   const env = setup('/mod/forum/view.php?id=61340', 'Thảo luận');
   let clicks = 0;

@@ -2,16 +2,22 @@ import { MESSAGE } from '../shared/constants.js';
 import { settingsStore } from '../shared/settings-store.js';
 import { nextLessonDelayMs, waitClickDelay } from '../shared/delays.js';
 import { syncCourseStatusPanel } from './course-status-panel.js';
-import { markAutoResumeAfterLogin, rememberCurrentActivity, resumeLowestProgressCourse, finishCourseAndResume, stopAutoResume } from './auto-resume.js';
+import { markAutoResumeAfterLogin, rememberCurrentActivity, resumeLowestProgressCourse, finishCourseAndResume, stopAutoResume, wasQuizOrForumInitiallyCompleted } from './auto-resume.js';
 import { forumRequiresTask, isCurrentForumCompleted, mountForumHelper } from './forum-helper.js';
 import { mountQuizExtractor } from './quiz-extractor.js';
 import { ensureLearningSession, finishLearningSession, recordLessonFailure } from '../shared/run-log.js';
 import { logActivity } from './activity-log.js';
 
-// Forum and quiz completion comes from their task state, not a video timer.
+// Forum và quiz completion đến từ trạng thái riêng, không phải video timer.
 const needsManualAction = () =>
+  wasQuizOrForumInitiallyCompleted() ||
   location.pathname.startsWith('/mod/quiz/') ||
   (location.pathname.startsWith('/mod/forum/') && forumRequiresTask());
+const ACTIVITY_NAVIGATION_KEY = 'vernal:activity-navigation-pending';
+const activityNavigationSelector = [
+  '#next-activity-link', '#prev-activity-link', 'a[rel="next"]', 'a[rel="prev"]',
+  '.activity-navigation a', '[data-region="activity-navigation"] a',
+].join(', ');
 
 // Nút "Hoạt động tiếp theo" chỉ dùng được khi còn trong DOM và không bị khóa.
 // Trả về chính phần tử đó, hoặc undefined khi không còn gì để bấm.
@@ -42,6 +48,53 @@ export function createLearningController(provider) {
   let quizMounted = false;
   let enabled = true;
   let rememberedActivityUrl;
+  let skippedInitiallyCompletedUrl;
+  let removeNextClickListener;
+
+  function rememberActivityNavigation() {
+    sessionStorage.setItem(ACTIVITY_NAVIGATION_KEY, JSON.stringify({
+      source: location.href,
+      startedAt: Date.now(),
+    }));
+  }
+
+  // Ghi nhận cả thao tác người dùng tự bấm Next. Khi Moodle đưa tới trang cuối không
+  // có điều hướng, document mới vẫn biết đây là một lần chuyển activity hợp lệ.
+  function observeNextActivityClicks() {
+    if (removeNextClickListener || typeof document.addEventListener !== 'function') return;
+    const onClick = (event) => {
+      const button = usableNextButton(provider);
+      const target = event.target;
+      if (button && (target === button || button.contains?.(target))) rememberActivityNavigation();
+    };
+    document.addEventListener('click', onClick, true);
+    removeNextClickListener = () => document.removeEventListener('click', onClick, true);
+  }
+
+  // Một vài trang cuối trên PTTC1 chỉ xuất hiện sau khi nút Next được bấm, nhưng lại
+  // không có bất kỳ thanh điều hướng activity nào. Đây là trang đích kết thúc course,
+  // không phải một Forum/Quiz mới để xử lý.
+  function finishOnTerminalNavigationDestination() {
+    try {
+      const pending = JSON.parse(sessionStorage.getItem(ACTIVITY_NAVIGATION_KEY) || 'null');
+      if (!pending?.source || pending.source === location.href || location.origin !== new URL(pending.source).origin)
+        return false;
+      sessionStorage.removeItem(ACTIVITY_NAVIGATION_KEY);
+      if (usableNextButton(provider) || document.querySelector(activityNavigationSelector)) return false;
+      logActivity('info', 'Trang đích sau Next không còn điều hướng activity — kết thúc course', location.pathname);
+      settingsStore.get().then(settings => {
+        if (!enabled) return;
+        const started = finishCourseAndResume({ resume: settings.autoResumeCourse });
+        activityState.courseFinished = started;
+        activityState.returningToCourses = started && settings.autoResumeCourse;
+        logActivity('success', 'Đã nhận diện trang cuối course không có nút điều hướng');
+      });
+      return true;
+    } catch {
+      sessionStorage.removeItem(ACTIVITY_NAVIGATION_KEY);
+      return false;
+    }
+  }
 
   function rememberCurrentActivityIfNeeded() {
     if (!location.pathname.startsWith('/mod/') || rememberedActivityUrl === location.href) return;
@@ -136,6 +189,7 @@ export function createLearningController(provider) {
         return { ok: false };
       }
       state.advanced = true;
+      rememberActivityNavigation();
       button.click();
       logActivity('success', 'Đã bấm "Hoạt động tiếp theo"', location.pathname);
       return { ok: true };
@@ -348,6 +402,22 @@ export function createLearningController(provider) {
   }
 
   function mountActivityHelpers() {
+    if (wasQuizOrForumInitiallyCompleted()) {
+      if (skippedInitiallyCompletedUrl === location.href) return;
+      skippedInitiallyCompletedUrl = location.href;
+      logActivity('info', 'Quiz/forum đã hoàn thành từ đầu course, bỏ qua theo snapshot', location.pathname);
+      waitClickDelay().then(() => {
+        if (!enabled || skippedInitiallyCompletedUrl !== location.href) return;
+        const button = usableNextButton(provider);
+        if (!button) {
+          logActivity('warn', 'Không có Next để bỏ qua quiz/forum đã hoàn thành', location.pathname);
+          return;
+        }
+        button.click();
+        logActivity('success', 'Đã bỏ qua quiz/forum đã hoàn thành', location.pathname);
+      });
+      return;
+    }
     logActivity('info', 'Gắn trợ giúp Forum/Quiz cho trang', location.pathname);
     Promise.resolve(mountForumHelper()).catch(error =>
       recordLessonFailure(error.message || String(error), {stage: 'forum'}),
@@ -360,6 +430,7 @@ export function createLearningController(provider) {
 
   function observePage() {
     observer?.disconnect();
+    observeNextActivityClicks();
     observer = new MutationObserver(() => {
       if (!enabled) return;
       watchCurrentVideo();
@@ -405,6 +476,8 @@ export function createLearningController(provider) {
     if (!enabled) {
       activityState.returningToCourses = false;
       observer?.disconnect();
+      removeNextClickListener?.();
+      removeNextClickListener = undefined;
       quizCleanup?.();
       quizCleanup = undefined;
       quizMounted = false;
@@ -434,6 +507,7 @@ export function createLearningController(provider) {
     if (provider.isLoginPage?.(location) || sessionStorage.getItem(loginFlowKey) === 'login') return;
     if (!enabled) return;
     startLearningLog();
+    if (finishOnTerminalNavigationDestination()) return;
     mountActivityHelpers();
     tryResumeCourse(true);
     syncCourseStatusPanel(settings.showCourseStatus);
@@ -478,6 +552,8 @@ export function createLearningController(provider) {
       enabled = false;
       logActivity('warn', 'Dừng controller (trang được nạp lại)');
       observer?.disconnect();
+      removeNextClickListener?.();
+      removeNextClickListener = undefined;
       quizCleanup?.();
       clearTimeout(coursePanelTimer);
       clearTimeout(nextLessonTimer);

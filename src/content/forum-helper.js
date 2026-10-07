@@ -22,6 +22,9 @@ const PENDING_REPLY_DISCUSSION_KEY =
 
 const submittingReplies = new Set();
 const ANNOUNCEMENT_FORUM_PREFIX = 'vernal_forum_announcement_';
+// Chỉ sống trong document hiện tại. sessionStorage "running" có thể còn lại sau
+// navigation/reload, trong khi tác vụ cũ đã bị browser hủy cùng document đó.
+const activeForumCreates = new Set();
 
 function currentForumId() {
   const url = new URL(location.href);
@@ -972,8 +975,12 @@ async function autoCreateForumDiscussion() {
 
   // Không cho MutationObserver gọi lại LLM nhiều lần
   if (sessionStorage.getItem(runKey) === 'running') {
-    console.log('Forum auto-create đang chạy, bỏ qua.');
-    return true;
+    if (activeForumCreates.has(runKey)) {
+      console.log('Forum auto-create đang chạy, bỏ qua.');
+      return true;
+    }
+    sessionStorage.removeItem(runKey);
+    logActivity('warn', 'Đã dọn cờ tạo forum bị kẹt từ trang trước', `cmid ${forumId}`);
   }
 
   if (sessionStorage.getItem(runKey) === 'done') {
@@ -986,6 +993,7 @@ async function autoCreateForumDiscussion() {
   if (!addTopicButton || addTopicButton.disabled || addTopicButton.getAttribute('aria-disabled') === 'true') return false;
 
   sessionStorage.setItem(runKey, 'running');
+  activeForumCreates.add(runKey);
 
   try {
     console.log('Phát hiện trang Forum. Bắt đầu tự tạo chủ đề...');
@@ -1134,6 +1142,8 @@ async function autoCreateForumDiscussion() {
     );
 
     return false;
+  } finally {
+    activeForumCreates.delete(runKey);
   }
 }
 
