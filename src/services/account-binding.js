@@ -1,7 +1,7 @@
 import { settingsStore } from '../shared/settings-store.js';
 
 /** Liên kết API với tài khoản LMS đã đăng nhập, không nhận hoặc lưu mật khẩu LMS. */
-export async function bindLmsAccount(account) {
+export async function bindLmsAccount(account, { signal } = {}) {
   if (!account?.authenticated || !account.accountId || !account.hostname) {
     throw new Error('Chưa xác minh được phiên đăng nhập LMS.');
   }
@@ -26,6 +26,7 @@ export async function bindLmsAccount(account) {
         ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}),
       },
       body: JSON.stringify(payload),
+      signal,
     });
     if (!response.ok) throw new Error('API từ chối liên kết tài khoản này.');
     const result = await response.json();

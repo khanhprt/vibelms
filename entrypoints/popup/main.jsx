@@ -38,6 +38,7 @@ function Popup() {
   const [powerOn, setPowerOn] = useState(true);
   const [autoPlayVideo, setAutoPlayVideo] = useState(false);
   const [showCourseStatus, setShowCourseStatus] = useState(false);
+  const [showActivityLog, setShowActivityLog] = useState(true);
   const [autoNextLesson, setAutoNextLesson] = useState(true);
   const [nextLessonDelaySeconds, setNextLessonDelaySeconds] = useState(5);
   const [forumHelperEnabled, setForumHelperEnabled] = useState(true);
@@ -52,8 +53,12 @@ function Popup() {
   // Giữ trạng thái nút nguồn đồng bộ nếu người dùng đổi từ cửa sổ popup khác.
   useEffect(() => {
     const onChanged = (changes, area) => {
-      if (area === 'local' && 'extensionEnabled' in changes) {
+      if (area !== 'local') return;
+      if ('extensionEnabled' in changes) {
         setPowerOn(changes.extensionEnabled.newValue !== false);
+      }
+      if ('showActivityLog' in changes) {
+        setShowActivityLog(changes.showActivityLog.newValue !== false);
       }
     };
     browser.storage.onChanged.addListener(onChanged);
@@ -64,6 +69,7 @@ function Popup() {
     setPowerOn(settings.extensionEnabled !== false);
     setAutoPlayVideo(settings.autoPlayVideo);
     setShowCourseStatus(settings.showCourseStatus);
+    setShowActivityLog(settings.showActivityLog !== false);
     setAutoNextLesson(settings.autoNextLesson);
     setNextLessonDelaySeconds(settings.nextLessonDelaySeconds);
     setForumHelperEnabled(settings.forumHelperEnabled !== false);
@@ -129,6 +135,10 @@ function Popup() {
     const value = !powerOn;
     await settingsStore.patch({ extensionEnabled: value });
     setPowerOn(value);
+    if (value) {
+      // Bật công tắc nguồn → tự bật nhật ký hoạt động để panel luôn hiển thị
+      await settingsStore.patch({ showActivityLog: true }).catch(() => {});
+    }
     setStatus(
       value
         ? 'Đã bật. Đang tiếp tục luồng học.'
@@ -148,6 +158,12 @@ function Popup() {
     const tab = await getActiveTab();
     await sendToActiveTab(tab.id, { type: 'REFRESH_COURSE_PANEL' });
   }
+  async function toggleActivityLog() {
+    const value = !showActivityLog;
+    await settingsStore.patch({ showActivityLog: value });
+    setShowActivityLog(value);
+    setStatus(value ? 'Đã bật nhật ký hoạt động.' : 'Đã tắt nhật ký hoạt động.');
+  }
   async function toggleAutoNext() {
     const value = !autoNextLesson;
     await settingsStore.patch({ autoNextLesson: value });
@@ -164,15 +180,15 @@ function Popup() {
     setForumHelperEnabled(value);
     setStatus(value ? 'Đã bật hỗ trợ Forum.' : 'Đã tắt hỗ trợ Forum.');
   }
-  // Đọc câu hỏi diễn ra trong content script, nên bật công tắc rồi tải lại trang quiz.
+  // Trả lời quiz diễn ra trong content script, nên bật công tắc rồi tải lại trang quiz.
   async function toggleQuizExport() {
     const value = !quizExport;
     await settingsStore.patch({ quizExportEnabled: value });
     setQuizExport(value);
     setStatus(
       value
-        ? 'Đã bật trích xuất câu hỏi. Tải lại trang quiz để áp dụng.'
-        : 'Đã tắt trích xuất câu hỏi.',
+        ? 'Đã bật tự trả lời quiz. Tải lại trang quiz để áp dụng.'
+        : 'Đã tắt tự trả lời quiz.',
     );
   }
   // Reloading the popup document lets the browser measure the shorter settings screen,
@@ -211,8 +227,10 @@ function Popup() {
             </span>
           </div>
           <div className="reference-stat">
-            <span>Tiến trình phiên</span>
-            <span className="reference-value">—</span>
+            <span>Phiên bản</span>
+            <span className="reference-value">
+              {browser.runtime.getManifest().version}
+            </span>
           </div>
         </section>
         <div className="reference-rule" />
@@ -232,6 +250,17 @@ function Popup() {
             type="checkbox"
             checked={showCourseStatus}
             onChange={toggleCourseStatus}
+          />
+          <span className="reference-chevron">›</span>
+        </div>
+        <div className="reference-row">
+          <span className="reference-icon">≡</span>
+          <span className="reference-title">Nhật ký hoạt động</span>
+          <input
+            className="reference-switch"
+            type="checkbox"
+            checked={showActivityLog}
+            onChange={toggleActivityLog}
           />
           <span className="reference-chevron">›</span>
         </div>
@@ -270,7 +299,7 @@ function Popup() {
         </div>
         <div className="reference-row">
           <span className="reference-icon">?</span>
-          <span className="reference-title">Trích xuất câu hỏi quiz</span>
+          <span className="reference-title">Tự trả lời quiz</span>
           <input
             className="reference-switch"
             type="checkbox"
@@ -356,16 +385,12 @@ function InlineSettings({ onBack }) {
     setSettings((current) => ({ ...current, pttc1Password: '', llmApiKey: '' }));
     setSaved(true);
   }
-  // Nạp cấu hình từ file: giữ nguyên mật khẩu/API key đang lưu nếu file không có.
+  // Chỉ các trường xuất hiện trong file mới bị thay đổi. Giá trị rỗng trong file là
+  // một lựa chọn có chủ đích và phải được khôi phục, kể cả API key/mật khẩu rỗng.
   async function importSettings(file) {
     try {
       const incoming = await readSettingsFile(file);
-      const current = await settingsStore.get();
-      await settingsStore.patch({
-        ...incoming,
-        pttc1Password: incoming.pttc1Password || current.pttc1Password,
-        llmApiKey: incoming.llmApiKey || current.llmApiKey,
-      });
+      await settingsStore.patch(incoming);
       const merged = await settingsStore.get();
       setSettings((current) => ({
         ...current,
@@ -374,7 +399,11 @@ function InlineSettings({ onBack }) {
         llmApiKey: '',
       }));
       setSaved(false);
-      setBackup(`Đã nạp ${Object.keys(incoming).length} trường từ ${file.name}.`);
+      const restoredSecrets = ['pttc1Password', 'llmApiKey'].some((key) => key in incoming);
+      setBackup(
+        `Đã nạp ${Object.keys(incoming).length} trường từ ${file.name}.` +
+        (restoredSecrets ? ' Mật khẩu/API Auth đã lưu nhưng không hiển thị lại để bảo mật.' : ''),
+      );
     } catch (error) {
       setBackup(error.message || 'Không nạp được file cấu hình.');
     }

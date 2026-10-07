@@ -1,4 +1,5 @@
 import { finishLearningSession } from '../shared/run-log.js';
+import { logActivity } from './activity-log.js';
 
 const FLOW_KEY = 'vernal:auto-resume-phase';
 const COURSES_PATH = '/my/courses.php';
@@ -13,6 +14,7 @@ const navigateAfterDelay = (url) => {
   navigationTimer = setTimeout(() => {
     navigationTimer = undefined;
     navigationTarget = undefined;
+    logActivity('info', 'Đang chuyển trang', String(url).replace(location.origin, ''));
     location.assign(url);
   }, 500);
 };
@@ -159,6 +161,7 @@ export function resumeLowestProgressCourse({ startIfIdle = false } = {}) {
       ) || available.some(({ progress }) => progress === null);
       if (cards.length && !stillLoading) {
         console.log('No remaining courses with incomplete LMS progress.');
+        logActivity('success', 'Đã hoàn thành mọi khóa có tiến độ dở');
         finishLearningSession();
         stopAutoResume();
       }
@@ -167,6 +170,11 @@ export function resumeLowestProgressCourse({ startIfIdle = false } = {}) {
     courses.sort((left, right) => left.progress - right.progress);
     sessionStorage.setItem(CURRENT_COURSE_KEY, new URL(courses[0].link.href, location.href).searchParams.get('id'));
     sessionStorage.setItem(FLOW_KEY, 'activity');
+    logActivity(
+      'info',
+      'Chọn khóa có tiến độ thấp nhất để tiếp tục',
+      `course ${new URL(courses[0].link.href, location.href).searchParams.get('id') || '?'} · ${courses[0].progress}%`,
+    );
     navigateAfterDelay(courses[0].link.href);
     return true;
   }

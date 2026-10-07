@@ -92,7 +92,7 @@ function Options() {
                 />
               </label>
               <label className="flex cursor-pointer items-center justify-between rounded-xl bg-white/4 p-3 text-sm text-slate-200">
-                <span>Trích xuất câu hỏi trên trang quiz</span>
+                <span>Tự trả lời quiz bằng AI</span>
                 <input
                   className="switch"
                   type="checkbox"
@@ -101,8 +101,8 @@ function Options() {
                 />
               </label>
               <p className="text-xs text-slate-400">
-                Chỉ đọc câu hỏi và các lựa chọn để bạn xem lại. Extension không chọn đáp
-                án và không nộp bài.
+                Đọc câu hỏi, tự chọn đáp án bằng AI và tự nộp bài khi mọi câu đều trả lời
+                được. Diễn biến được ghi lại trong nhật ký hoạt động.
               </p>
               <label className="mt-3 flex cursor-pointer items-center justify-between rounded-xl bg-white/4 p-3 text-sm text-slate-200">
                 <span>Tự bấm nút Bắt đầu khi mở trang quiz</span>

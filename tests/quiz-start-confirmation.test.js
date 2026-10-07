@@ -21,6 +21,7 @@ function setup(labels = ['B\u1eaft \u0110\u1ea7u L\u00e0m B\u00e0i', 'H\u1ee7y B
     window: { getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) },
     settingsStore: { get: async () => settings },
     recordLessonFailure: async () => {},
+    logActivity: () => {},
     clickWithDelay: async button => { clicks.push(button); return true; },
   });
   runInContext(source, context);

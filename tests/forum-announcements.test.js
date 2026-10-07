@@ -24,6 +24,7 @@ function setup(path, title, { breadcrumb = false, storage = new Map() } = {}) {
         ? (breadcrumb ? [forumLink] : [{ textContent: label }]) : [],
     },
     sessionStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
+    logActivity: () => {},
     settingsStore: { get: async () => ({ forumHelperEnabled: true }) },
     browser: {
       runtime: { sendMessage: () => assert.fail('Announcements must not call the LLM') },

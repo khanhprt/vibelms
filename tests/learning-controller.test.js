@@ -38,6 +38,7 @@ async function setup(path, overrides = {}, {storage = new Map(), providerOverrid
     Date: { now: () => now }, URL,
     console: { warn() {} },
     ensureLearningSession: async () => { if (logHangs) return new Promise(() => {}); if (logFailure) throw new Error('Log storage unavailable'); return 'test-session'; }, finishLearningSession: async () => {}, recordLessonFailure: async () => {},
+    logActivity: () => {},
     URLSearchParams, location, MESSAGE: { START_AUTO_RESUME: 'resume', NEXT_LESSON: 'next', LOGIN_WITH_SAVED_CREDENTIALS: 'login', COURSE_STATUS: 'status' },
     sessionStorage: {getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value),
       removeItem: key => storage.delete(key)},

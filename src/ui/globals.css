@@ -18,6 +18,28 @@ body {
 * {
   box-sizing: border-box;
 }
+/* Thanh kéo cùng theme với các panel LMS: track navy, thumb mint, góc vuông. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 245, 223, 0.45) rgba(8, 16, 35, 0.65);
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(8, 16, 35, 0.65);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 245, 223, 0.45);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 245, 223, 0.7);
+}
+::-webkit-scrollbar-corner {
+  background: rgba(8, 16, 35, 0.65);
+}
 .ai-shell {
   position: relative;
   overflow: hidden;
@@ -351,7 +373,7 @@ body {
   background: #fff;
 }
 
-/* Home has six controls; keep the native extension popup below Chrome's
+/* Home has seven controls; keep the native extension popup below Chrome's
    practical height limit so it sizes to its content instead of scrolling. */
 .home-panel {
   padding: 12px 14px 10px;

@@ -19,6 +19,7 @@ function setup(responses) {
       return response;
     } } },
     setTimeout: (callback, ms) => { waits.push(ms); callback(); },
+    logActivity: () => {},
   });
   runInContext(`${retrySource}\n${forumSource}`, context);
   return { context, calls: () => calls, waits };

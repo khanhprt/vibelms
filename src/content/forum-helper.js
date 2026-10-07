@@ -1,5 +1,6 @@
 import { settingsStore } from '../shared/settings-store.js';
 import { recordLessonFailure } from '../shared/run-log.js';
+import { logActivity } from './activity-log.js';
 import { requestLlmWithRetry } from '../shared/llm-request.js';
 
 const HELPER_ID = 'vernal-forum-helper';
@@ -664,6 +665,7 @@ async function mountDiscussionReplyHelper() {
 
   try {
     console.log('[FORUM REPLY] Bắt đầu tự động soạn phản hồi...');
+    logActivity('info', 'Bắt đầu soạn phản hồi forum bằng AI');
 
     // ================================
     // 1. ĐỌC NỘI DUNG DISCUSSION
@@ -757,6 +759,7 @@ async function mountDiscussionReplyHelper() {
     );
 
     if (isAnnouncementForum()) return;
+    logActivity('info', 'Đã chọn phúc đáp chủ đề forum');
     reply.click();
 
     // ================================
@@ -920,6 +923,7 @@ async function mountDiscussionReplyHelper() {
 
 
     if (isAnnouncementForum()) return;
+    logActivity('info', 'Đang gửi phản hồi forum lên diễn đàn');
     submitButton.click();
 
     console.log(
@@ -930,6 +934,7 @@ async function mountDiscussionReplyHelper() {
     sessionStorage.removeItem(
       replyRunKey
     );
+    logActivity('error', 'Tự phúc đáp forum thất bại', error.message || String(error));
     await recordLessonFailure(error.message || String(error), {stage: 'forum-reply'});
 
     console.error(
@@ -984,6 +989,7 @@ async function autoCreateForumDiscussion() {
 
   try {
     console.log('Phát hiện trang Forum. Bắt đầu tự tạo chủ đề...');
+    logActivity('info', 'Bắt đầu tự tạo chủ đề forum bằng AI');
 
     // ================================
     // 1. TÌM NÚT THÊM CHỦ ĐỀ MỚI
@@ -1113,11 +1119,13 @@ async function autoCreateForumDiscussion() {
     // ================================
 
     if (isAnnouncementForum()) return false;
+    logActivity('info', 'Đang đăng chủ đề forum lên diễn đàn');
     submitButton.click();
 
     return true;
   } catch (error) {
     sessionStorage.removeItem(runKey);
+    logActivity('error', 'Tự tạo chủ đề forum thất bại', error.message || String(error));
     await recordLessonFailure(error.message || String(error), {stage: 'forum-create'});
 
     console.error(
@@ -1152,6 +1160,7 @@ export async function mountForumHelper() {
     try {
       await applyPendingForumDraft();
     } catch (error) {
+      logActivity('error', 'Gửi chủ đề forum thất bại', error.message || String(error));
       await recordLessonFailure(error.message || String(error), {stage: 'forum-submit'});
       console.error('Forum submission failed:', error);
     }

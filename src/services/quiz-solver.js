@@ -50,7 +50,7 @@ function parseSuggestion(response) {
 
   try {
     parsed = JSON.parse(raw);
-  } catch (error) {
+  } catch {
     console.error('Không parse được JSON từ LLM:', raw);
     throw new Error(`LLM trả về JSON không hợp lệ: ${raw}`);
   }
@@ -107,16 +107,12 @@ Chỉ trả về JSON hợp lệ, không markdown, đúng cấu trúc:
 }
 
 
-export async function suggestAnswer({ stem, type, quizName, options, assets }) {
+export async function suggestAnswer({ stem, type, quizName, options, assets }, { signal } = {}) {
   const settings = await settingsStore.get();
-  const { llmApiKey, llmModel } = settings;
+  const { llmApiKey, llmModel, llmEndpoint } = settings;
 
   if (!llmApiKey) {
     throw new Error('Hãy nhập API Auth trong Cài đặt.');
-  }
-
-  if (!settings.boundAccount) {
-    throw new Error('Hãy liên kết tài khoản PTTC1 trước khi dùng LLM.');
   }
 
   if (!options?.length) {
@@ -138,7 +134,7 @@ export async function suggestAnswer({ stem, type, quizName, options, assets }) {
   console.log('PROMPT:', prompt);
   console.groupEnd();
 
-  const response = await fetch(VILAO_CHAT_COMPLETIONS_URL, {
+  const response = await fetch(llmEndpoint || VILAO_CHAT_COMPLETIONS_URL, {
     method: 'POST',
 
     headers: {
@@ -173,6 +169,7 @@ export async function suggestAnswer({ stem, type, quizName, options, assets }) {
         },
       ],
     }),
+    signal,
   });
 
   console.log('HTTP STATUS:', response.status);

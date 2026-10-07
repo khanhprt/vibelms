@@ -37,7 +37,7 @@ function createFallbackRequest(body) {
   return fallbackBody;
 }
 
-async function postChatCompletion({ apiKey, body }) {
+async function postChatCompletion({ apiKey, body, signal }) {
   const headers = {
     'Content-Type': 'application/json',
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
@@ -48,6 +48,7 @@ async function postChatCompletion({ apiKey, body }) {
       method: 'POST',
       headers,
       body: JSON.stringify(requestBody),
+      signal,
     });
 
   let response = await post(body);
@@ -108,12 +109,6 @@ async function getAuthedSettings() {
     throw new Error('Hãy nhập API Auth trong Cài đặt.');
   }
 
-  if (!settings.boundAccount) {
-    throw new Error(
-      'Hãy liên kết tài khoản PTTC1 trước khi dùng LLM.',
-    );
-  }
-
   return { llmApiKey, llmModel };
 }
 
@@ -126,11 +121,12 @@ export async function generateDiscussionDraft({
   chapterName,
   topic,
   context,
-}) {
+}, { signal } = {}) {
   const { llmApiKey, llmModel } = await getAuthedSettings();
 
   const response = await postChatCompletion({
     apiKey: llmApiKey,
+    signal,
     body: createForumJsonRequest({
       model: llmModel,
       maxTokens: 800,
@@ -160,11 +156,12 @@ export async function generateForumReply({
   courseName,
   chapterName,
   question,
-}) {
+}, { signal } = {}) {
   const { llmApiKey, llmModel } = await getAuthedSettings();
 
   const response = await postChatCompletion({
     apiKey: llmApiKey,
+    signal,
     body: createForumJsonRequest({
       model: llmModel,
       maxTokens: 800,

@@ -5,8 +5,8 @@ import { syncCourseStatusPanel } from './course-status-panel.js';
 import { markAutoResumeAfterLogin, resumeLowestProgressCourse, finishCourseAndResume, stopAutoResume } from './auto-resume.js';
 import { forumRequiresTask, isCurrentForumCompleted, mountForumHelper } from './forum-helper.js';
 import { mountQuizExtractor } from './quiz-extractor.js';
-import { autoBindLocalAccount } from '../services/account-binding.js';
 import { ensureLearningSession, finishLearningSession, recordLessonFailure } from '../shared/run-log.js';
+import { logActivity } from './activity-log.js';
 
 // Forum and quiz completion comes from their task state, not a video timer.
 const needsManualAction = () =>
@@ -59,6 +59,7 @@ export function createLearningController(provider) {
       clearTimeout(nextLessonTimer);
       nextLessonSource = undefined;
       activityState = { url: location.href, completed: false, advanced: false };
+      logActivity('info', 'Chuyển trang', `${location.hostname}${location.pathname}`);
     }
     const state = activityState;
     if (location.pathname.startsWith('/mod/forum/') && forumRequiresTask()) {
@@ -72,14 +73,20 @@ export function createLearningController(provider) {
   }
 
   async function nextLesson(automatic = false) {
-    if (!enabled) return { ok: false, reason: 'extension-disabled' };
+    if (!enabled) {
+      logActivity('warn', 'Không chuyển bài: công tắc nguồn đang tắt');
+      return { ok: false, reason: 'extension-disabled' };
+    }
     if (advancing) return { ok: false, reason: 'navigation-in-progress' };
     advancing = true;
     try {
       const state = await refreshActivityState();
       if (!automatic && !needsManualAction()) state.completed = true;
       if (!state.completed || state.advanced) return { ok: false, reason: 'activity-incomplete' };
-      if (!(await allowedHere())) return { ok: false, reason: 'domain-not-allowed' };
+      if (!(await allowedHere())) {
+        logActivity('warn', 'Domain không nằm trong danh sách cho phép', location.hostname);
+        return { ok: false, reason: 'domain-not-allowed' };
+      }
       await waitClickDelay(automatic ? state.waitedMs || 0 : 0);
       await refreshActivityState();
       const settings = await settingsStore.get();
@@ -104,20 +111,28 @@ export function createLearningController(provider) {
             state.courseFinished = true;
             state.returningToCourses = settings.autoResumeCourse;
           }
+          logActivity(
+            'info',
+            'Đã hết hoạt động trong khóa',
+            settings.autoResumeCourse ? 'Đang quay về danh sách khóa học' : 'Đã kết thúc khóa',
+          );
           return { ok: started, reason: settings.autoResumeCourse ? 'returning-to-courses' : 'course-finished' };
         }
       }
       if (!button) {
         if (!state.navigationErrorLogged) {
           state.navigationErrorLogged = true;
+          logActivity('error', 'Không tìm thấy nút "Hoạt động tiếp theo"', location.pathname);
           await recordLessonFailure('Next activity link is missing or unavailable', {stage: 'activity-navigation'});
         }
         return { ok: false };
       }
       state.advanced = true;
       button.click();
+      logActivity('success', 'Đã bấm "Hoạt động tiếp theo"', location.pathname);
       return { ok: true };
     } catch (error) {
+      logActivity('error', 'Lỗi khi chuyển bài', error.message || String(error));
       await recordLessonFailure(error.message || String(error), {stage: 'activity-navigation'});
       return {ok: false, reason: 'navigation-failed'};
     } finally {
@@ -156,6 +171,7 @@ export function createLearningController(provider) {
     if (nextLessonSource !== source) nextLessonStartedAt = Date.now();
     nextLessonSource = source;
     nextLessonWaitMs = waitMs;
+    logActivity('info', `Hẹn chuyển bài sau ${Math.round(waitMs / 1000)} giây`, location.pathname);
     nextLessonTimer = setTimeout(() => {
       nextLessonTimer = undefined;
       if (!enabled || state !== activityState || state.url !== location.href) return;
@@ -166,16 +182,21 @@ export function createLearningController(provider) {
   }
 
   async function startAutoResume() {
-    if (!(await allowedHere())) return { ok: false, reason: 'domain-not-allowed' };
+    logActivity('info', 'Bấm "Bắt đầu học tiếp"');
+    if (!(await allowedHere())) {
+      logActivity('warn', 'Domain không cho phép tự động học', location.hostname);
+      return { ok: false, reason: 'domain-not-allowed' };
+    }
     startLearningLog();
     if (activityState.courseFinished) {
+      logActivity('info', 'Khóa đã kết thúc — đang quay về danh sách khóa học');
       if (!activityState.returningToCourses)
         activityState.returningToCourses = finishCourseAndResume({ resume: true });
       return { ok: activityState.returningToCourses, returningToCourses: true };
     }
     if (location.pathname.startsWith('/mod/')) {
+      logActivity('info', 'Tiếp tục hoạt động đang mở', location.pathname);
       stopAutoResume();
-      await autoBindLocalAccount(provider.getAccount?.());
       if (!enabled) return { ok: false, reason: 'extension-disabled' };
       mountActivityHelpers();
       await watchCurrentVideo();
@@ -183,9 +204,11 @@ export function createLearningController(provider) {
       return { ok: true, resumedCurrentActivity: true };
     }
     if (location.pathname === '/course/view.php') {
+      logActivity('info', 'Đang tìm hoạt động trong khóa hiện tại', location.pathname);
       const started = resumeLowestProgressCourse({ startIfIdle: true });
       return { ok: true, resumedCurrentCourse: true, waitingForActivities: !started };
     }
+    logActivity('info', 'Đang tìm khóa có tiến độ thấp nhất', location.pathname);
     markAutoResumeAfterLogin();
     resumeLowestProgressCourse();
     return { ok: true };
@@ -217,12 +240,16 @@ export function createLearningController(provider) {
     const video = provider.findVideo(document);
     if (video) {
       video.muted = true;
-      if (video.paused) video.play().catch(error => {
-        if (!activityState.videoErrorLogged) {
-          activityState.videoErrorLogged = true;
-          recordLessonFailure(error.message || String(error), {stage: 'video-playback'});
-        }
-      });
+      if (video.paused)
+        video.play().then(
+          () => logActivity('info', 'Đang tự phát video', location.pathname),
+          (error) => {
+            if (activityState.videoErrorLogged) return;
+            activityState.videoErrorLogged = true;
+            logActivity('error', 'Không tự phát được video', error.message || String(error));
+            recordLessonFailure(error.message || String(error), {stage: 'video-playback'});
+          },
+        );
     } else {
       const frame = provider.findVideoFrame?.(document);
       if (frame) watchFrameLoad(frame);
@@ -238,25 +265,41 @@ export function createLearningController(provider) {
         provider.isLoginPage?.(location) ||
         (location.pathname === '/login/logout.php' && sessionStorage.getItem(loginFlowKey));
       if (!canUseLoginPage) return { ok: false, reason: 'login-page-missing' };
-      if (!settings.pttc1Username) return { ok: false, reason: 'username-missing' };
-      if (!settings.pttc1Password) return { ok: false, reason: 'password-missing' };
-      if (!(await allowedHere())) return { ok: false, reason: 'domain-not-allowed' };
+      if (!settings.pttc1Username) {
+        logActivity('warn', 'Chưa lưu tài khoản PTTC1 nên không thể tự đăng nhập');
+        return { ok: false, reason: 'username-missing' };
+      }
+      if (!settings.pttc1Password) {
+        logActivity('warn', 'Chưa lưu mật khẩu PTTC1 nên không thể tự đăng nhập');
+        return { ok: false, reason: 'password-missing' };
+      }
+      if (!(await allowedHere())) {
+        logActivity('warn', 'Domain không cho phép tự đăng nhập', location.hostname);
+        return { ok: false, reason: 'domain-not-allowed' };
+      }
       const sourceUrl = location.href;
       await waitClickDelay();
       if (!enabled || sourceUrl !== location.href) return { ok: false, reason: 'login-page-changed' };
       const logout = provider.findLoginLogoutButton?.(document);
       if (logout) {
         if (!logout.isConnected) return { ok: false, reason: 'logout-button-missing' };
+        logActivity('info', 'Đang đăng xuất để đăng nhập lại bằng tài khoản đã lưu');
         stopAutoResume();
         sessionStorage.setItem(loginFlowKey, 'login');
         loginSubmitted = true;
         logout.click();
         return { ok: true, loggingOut: true };
       }
+      logActivity('info', 'Đang gửi biểu mẫu đăng nhập tự động');
       sessionStorage.setItem(loginFlowKey, 'submitted');
       const result = provider.login({ username: settings.pttc1Username, password: settings.pttc1Password });
       loginSubmitted = Boolean(result.ok);
       if (!result.ok) sessionStorage.removeItem(loginFlowKey);
+      logActivity(
+        result.ok ? 'success' : 'error',
+        result.ok ? 'Đã gửi biểu mẫu đăng nhập' : 'Đăng nhập tự động thất bại',
+        result.reason || result.error || '',
+      );
       if (result.ok && settings.autoResumeCourse) markAutoResumeAfterLogin();
       return result;
     } catch (error) {
@@ -297,6 +340,7 @@ export function createLearningController(provider) {
   }
 
   function mountActivityHelpers() {
+    logActivity('info', 'Gắn trợ giúp Forum/Quiz cho trang', location.pathname);
     Promise.resolve(mountForumHelper()).catch(error =>
       recordLessonFailure(error.message || String(error), {stage: 'forum'}),
     );
@@ -380,8 +424,6 @@ export function createLearningController(provider) {
     observePage();
     await continueLoginFlow();
     if (provider.isLoginPage?.(location) || sessionStorage.getItem(loginFlowKey) === 'login') return;
-    // Gắn cờ liên kết trước, để các nút gợi ý LLM dùng được ngay khi bấm.
-    await autoBindLocalAccount(provider.getAccount?.());
     if (!enabled) return;
     startLearningLog();
     mountActivityHelpers();
@@ -426,6 +468,7 @@ export function createLearningController(provider) {
     },
     destroy() {
       enabled = false;
+      logActivity('warn', 'Dừng controller (trang được nạp lại)');
       observer?.disconnect();
       quizCleanup?.();
       clearTimeout(coursePanelTimer);

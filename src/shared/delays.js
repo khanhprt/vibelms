@@ -50,6 +50,9 @@ export async function waitClickDelay(waitedMs = 0) {
 export async function clickWithDelay(element) {
   if (!element) return false;
   await waitClickDelay();
+  // Công tắc nguồn là chốt cuối cùng trước mọi click tự động đã được lên lịch.
+  // Nhờ vậy tắt extension trong lúc đang chờ sẽ không còn bấm lên trang LMS.
+  if ((await settingsStore.get()).extensionEnabled === false) return false;
   if (!element.isConnected) return false;
   element.click();
   return true;

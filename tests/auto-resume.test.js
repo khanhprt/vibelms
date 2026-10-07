@@ -28,6 +28,7 @@ function setup(cards = []) {
   const location = { pathname: '/my/courses.php', href: `${origin}/my/courses.php`, origin,
     assign: url => navigations.push(url) };
   const context = createContext({URL, console, document: doc, location,
+    logActivity: () => {},
     finishLearningSession: async () => {},
     sessionStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value),
       removeItem: key => storage.delete(key) },
