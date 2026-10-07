@@ -498,6 +498,12 @@ function InlineSettings({ onBack }) {
           />
           <input
             className="reference-key mt-2"
+            placeholder="Model dự phòng quiz có ảnh"
+            value={settings.quizVisionModel}
+            onChange={(e) => update('quizVisionModel', e.target.value)}
+          />
+          <input
+            className="reference-key mt-2"
             type="password"
             placeholder="API Auth (sk-...)"
             value={settings.llmApiKey}

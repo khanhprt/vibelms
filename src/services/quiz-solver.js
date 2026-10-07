@@ -72,8 +72,11 @@ function buildPrompt({ stem, type, quizName, options, assets = [] }) {
 
   const allowedValues = options.map((option) => String(option.value));
 
+  const sentImageCount = getVisionImages(assets).length;
   const imageNote = assets.length
-    ? `\nLưu ý: câu hỏi có ${assets.length} hình ảnh/công thức đính kèm mà bạn không thấy được. Nếu phần chữ không đủ để kết luận, hãy trả value là "UNKNOWN".`
+    ? sentImageCount
+      ? `\nLưu ý: có ${sentImageCount} hình ảnh/công thức đính kèm trong nội dung này. Hãy dùng cả ảnh và phần chữ để chọn đáp án.`
+      : `\nLưu ý: câu hỏi có ${assets.length} hình ảnh/công thức nhưng không tải được để gửi kèm. Nếu phần chữ không đủ để kết luận, hãy trả value là "UNKNOWN".`
     : '';
 
   const selectionNote = type === 'single' || type === 'truefalse'
@@ -106,10 +109,25 @@ Chỉ trả về JSON hợp lệ, không markdown, đúng cấu trúc:
 {"value":"<value của đáp án đúng hoặc UNKNOWN>","why":"<một câu ngắn giải thích>"}`;
 }
 
+function getVisionImages(assets = []) {
+  return assets
+    .map((asset) => asset?.dataUrl || asset?.src || '')
+    .filter((url) => /^data:image\//i.test(url));
+}
+
+function createUserContent(prompt, assets) {
+  const images = getVisionImages(assets);
+  if (!images.length) return prompt;
+  return [
+    { type: 'text', text: prompt },
+    ...images.map((url) => ({ type: 'image_url', image_url: { url } })),
+  ];
+}
+
 
 export async function suggestAnswer({ stem, type, quizName, options, assets }, { signal } = {}) {
   const settings = await settingsStore.get();
-  const { llmApiKey, llmModel, llmEndpoint } = settings;
+  const { llmApiKey, llmModel, llmEndpoint, quizVisionModel } = settings;
 
   if (!llmApiKey) {
     throw new Error('Hãy nhập API Auth trong Cài đặt.');
@@ -126,6 +144,10 @@ export async function suggestAnswer({ stem, type, quizName, options, assets }, {
     options,
     assets,
   });
+  const userContent = createUserContent(prompt, assets);
+  const model = Array.isArray(userContent)
+    ? (quizVisionModel || 'gemini-3.8-flash')
+    : llmModel;
 
   console.group('===== LLM REQUEST =====');
   console.log('STEM:', stem);
@@ -147,7 +169,7 @@ export async function suggestAnswer({ stem, type, quizName, options, assets }, {
     },
 
     body: JSON.stringify({
-      model: llmModel,
+      model,
       max_tokens: 800,
 
       messages: [
@@ -165,7 +187,7 @@ export async function suggestAnswer({ stem, type, quizName, options, assets }, {
 
         {
           role: 'user',
-          content: prompt,
+          content: userContent,
         },
       ],
     }),

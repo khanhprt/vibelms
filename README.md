@@ -2,19 +2,27 @@
 
 <img src="assets/vernal-logo.png" alt="Vernal — biểu tượng dải ruy-băng xanh" width="180" />
 
-```text
+<table align="center">
+  <tr>
+    <td>
+      <pre>
 ██╗   ██╗███████╗██████╗ ███╗   ██╗ █████╗ ██╗
 ██║   ██║██╔════╝██╔══██╗████╗  ██║██╔══██╗██║
 ██║   ██║█████╗  ██████╔╝██╔██╗ ██║███████║██║
 ╚██╗ ██╔╝██╔══╝  ██╔══██╗██║╚██╗██║██╔══██║██║
  ╚████╔╝ ███████╗██║  ██║██║ ╚████║██║  ██║███████╗
   ╚═══╝  ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
-```
+      </pre>
+    </td>
+  </tr>
+</table>
+
+<p align="center"><sub>LEARNING COMPANION</sub></p>
 
 
-### Trợ lý học trực tuyến có kiểm soát dành cho Chrome
+<h3 align="center">Trợ lý học trực tuyến có kiểm soát dành cho Chrome</h3>
 
-Hỗ trợ theo dõi tiến độ, tiếp tục khóa học, điều khiển video và chuẩn bị bản nháp thảo luận — người học luôn là người quyết định thao tác cuối cùng.
+<p align="center">Hỗ trợ theo dõi tiến độ, tiếp tục khóa học, điều khiển video và chuẩn bị bản nháp thảo luận — người học luôn là người quyết định thao tác cuối cùng.</p>
 
 </div>
 

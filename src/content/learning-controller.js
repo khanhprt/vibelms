@@ -2,7 +2,7 @@ import { MESSAGE } from '../shared/constants.js';
 import { settingsStore } from '../shared/settings-store.js';
 import { nextLessonDelayMs, waitClickDelay } from '../shared/delays.js';
 import { syncCourseStatusPanel } from './course-status-panel.js';
-import { markAutoResumeAfterLogin, resumeLowestProgressCourse, finishCourseAndResume, stopAutoResume } from './auto-resume.js';
+import { markAutoResumeAfterLogin, rememberCurrentActivity, resumeLowestProgressCourse, finishCourseAndResume, stopAutoResume } from './auto-resume.js';
 import { forumRequiresTask, isCurrentForumCompleted, mountForumHelper } from './forum-helper.js';
 import { mountQuizExtractor } from './quiz-extractor.js';
 import { ensureLearningSession, finishLearningSession, recordLessonFailure } from '../shared/run-log.js';
@@ -41,6 +41,13 @@ export function createLearningController(provider) {
   let quizCleanup;
   let quizMounted = false;
   let enabled = true;
+  let rememberedActivityUrl;
+
+  function rememberCurrentActivityIfNeeded() {
+    if (!location.pathname.startsWith('/mod/') || rememberedActivityUrl === location.href) return;
+    rememberedActivityUrl = location.href;
+    rememberCurrentActivity();
+  }
 
   function startLearningLog() {
     // Logging failures must not stop course selection or activity navigation.
@@ -55,6 +62,7 @@ export function createLearningController(provider) {
   }
 
   async function refreshActivityState() {
+    rememberCurrentActivityIfNeeded();
     if (activityState.url !== location.href) {
       clearTimeout(nextLessonTimer);
       nextLessonSource = undefined;

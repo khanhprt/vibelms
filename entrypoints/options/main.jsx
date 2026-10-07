@@ -172,6 +172,12 @@ function Options() {
               />
               <input
                 className="ai-input"
+                placeholder="Model dự phòng khi quiz có ảnh"
+                value={form.quizVisionModel}
+                onChange={(e) => update('quizVisionModel', e.target.value)}
+              />
+              <input
+                className="ai-input"
                 placeholder="API Auth (sk-...) — để trống để giữ key cũ"
                 type="password"
                 value={form.llmApiKey}

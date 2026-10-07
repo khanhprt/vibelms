@@ -49,7 +49,7 @@ async function setup(path, overrides = {}, {storage = new Map(), providerOverrid
     clearTimeout: key => timers.delete(key), setInterval: () => ++id, clearInterval: () => {},
     nextLessonDelayMs: seconds => seconds * 1000, waitClickDelay: waitedMs => delay(waitedMs),
     syncCourseStatusPanel: () => {}, autoBindLocalAccount: async () => {},
-    markAutoResumeAfterLogin: () => calls.mark++, resumeLowestProgressCourse: options => {
+    markAutoResumeAfterLogin: () => calls.mark++, rememberCurrentActivity: () => {}, resumeLowestProgressCourse: options => {
       calls.resumeOptions.push(options);
       calls.resume++;
     },

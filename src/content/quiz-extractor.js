@@ -106,6 +106,51 @@ function readAssets(node) {
     .filter((asset) => asset.src);
 }
 
+// URL ảnh Moodle thường cần phiên đăng nhập hiện tại. Đọc bytes ngay trong content
+// script rồi gửi data URL cho background, thay vì bắt gateway phải truy cập LMS.
+// Không để một ảnh lỗi làm hỏng cả câu hỏi text-only.
+async function toImageDataUrl(asset) {
+  const detail = asset.alt || (/^data:/i.test(asset.src) ? 'Ảnh nhúng trong trang' : asset.src);
+  if (/^data:image\//i.test(asset.src)) {
+    logActivity('success', 'Đã chuẩn bị ảnh quiz cho Gemini', detail);
+    return { ...asset, dataUrl: asset.src };
+  }
+
+  try {
+    logActivity('info', 'Đang tải ảnh quiz để gửi Gemini', detail);
+    const response = await fetch(asset.src, { credentials: 'include' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    if (!blob.type.startsWith('image/') || blob.size > 5 * 1024 * 1024) {
+      throw new Error('Ảnh không hợp lệ hoặc lớn hơn 5 MB');
+    }
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Không đọc được ảnh'));
+      reader.readAsDataURL(blob);
+    });
+    logActivity(
+      'success',
+      'Đã chuẩn bị ảnh quiz cho Gemini',
+      `${detail} · ${Math.ceil(blob.size / 1024)} KB · ${blob.type}`,
+    );
+    return { ...asset, dataUrl };
+  } catch (error) {
+    console.warn('Không thể đọc ảnh quiz để gửi AI:', asset.src, error);
+    logActivity(
+      'warn',
+      'Không thể tải ảnh quiz cho Gemini',
+      `${detail} · ${error.message || String(error)}`,
+    );
+    return asset;
+  }
+}
+
+async function prepareVisionAssets(assets) {
+  return Promise.all((assets || []).slice(0, 4).map(toImageDataUrl));
+}
+
 function readQuestion(node) {
   const {
     name,
@@ -215,7 +260,7 @@ async function requestSuggestionWithRetry(question, maxRetries = 3) {
           type: question.type,
           quizName: readQuizMeta().quizName,
           options: question.options,
-          assets: question.assets,
+          assets: await prepareVisionAssets(question.assets),
         },
       });
 

@@ -22,6 +22,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   llmEndpoint: 'https://api.vilao.ai/v1/chat/completions',
   llmApiKey: '',
   llmModel: 'gpt-4o',
+  // Model dự phòng chỉ dùng cho câu quiz có ảnh; model chính vẫn xử lý mọi request khác.
+  quizVisionModel: 'gemini-3.8-flash',
   pttc1Username: '',
   pttc1Password: '',
   pttc1AutoLogin: false,
